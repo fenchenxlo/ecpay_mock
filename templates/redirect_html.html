@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>綠界付款成功</title>
+
+    <style>
+        body{
+            font-family: Arial, sans-serif;
+            margin:40px;
+        }
+
+        .container{
+            max-width:800px;
+            margin:auto;
+        }
+
+        .info-box{
+            border:1px solid #ccc;
+            padding:20px;
+            border-radius:10px;
+            background:#f8f8f8;
+        }
+
+        .important{
+            color:red;
+            font-weight:bold;
+        }
+
+        table{
+            width:100%;
+            border-collapse: collapse;
+        }
+
+        td{
+            padding:10px;
+            border:1px solid #ddd;
+        }
+
+        .btn{
+            margin-top:20px;
+            padding:10px 20px;
+            cursor:pointer;
+        }
+
+    </style>
+</head>
+<body>
+<div class="container">
+    <h3>綠界付款成功</h3>
+    <div class="info-box">
+        <table>
+            <tr>
+                <!-- <td>test</td>
+                <td>{{ payment_payload_dict }}</td>
+            </tr> -->
+            <tr>
+                <td>訂單編號</td>
+                <td>{{ payment_payload_dict.merchant_trade_no }}</td>
+            </tr>
+
+            <tr>
+                <td>商品名稱</td>
+                <td>{{ payment_payload_dict.item_name }}</td>
+            </tr>
+
+            <tr>
+                <td>付款金額</td>
+                <td>{{ payment_payload_dict.trade_amt }} 元</td>
+            </tr>
+
+            <tr>
+                <td>付款方式</td>
+                <td>{{ payment_payload_dict.choose_payment }}</td>
+            </tr>
+
+            <tr>
+                <td>虛擬帳號</td>
+                <td class="important">
+                    {{ payment_payload_dict.v_account }}
+                </td>
+            </tr>
+
+
+        </table>
+    <!-- 修改處: 將 id 改為 class 並用 data-payload 儲存訂單付款資料 -->
+    <button id="pay-btn" class="pay-btn" data-payload='{{ payment_payload_json|safe }}'>
+       付款完成-前往商城
+    </button>
+
+    {% csrf_token %}
+    <script>
+        function getCSRFToken() {
+            return document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+
+        // 修改處: 使用 class 選擇器綁定多個按鈕事件
+        document.addEventListener("DOMContentLoaded", function(){
+            const buttons = document.querySelectorAll(".pay-btn");  // 選取所有付款按鈕
+            buttons.forEach(btn => {
+                btn.addEventListener("click", function(){
+                    const payload = JSON.parse(this.dataset.payload);  // 讀取對應的 payload
+                    fetch("http://127.0.0.1:8000/commerce_shop/payment_ok/", {
+                        method: "POST",
+                        credentials: "include",
+                        headers: {
+                            "X-CSRFToken": getCSRFToken(),
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(res => res.text())
+                    .then(html => {
+                        document.open();
+                        document.write(html);
+                        document.close();
+                    })
+                    .catch(err => console.error(err));
+                });
+            });
+        });
+        //document.getElementById('pay-btn').onclick();
+    </script>
+</div>
+
+</body>
+</html>

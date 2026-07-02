@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>綠界 ATM 付款資訊</title>
+
+    <style>
+        body{
+            font-family: Arial, sans-serif;
+            margin:40px;
+        }
+
+        .container{
+            max-width:800px;
+            margin:auto;
+        }
+
+        .info-box{
+            border:1px solid #ccc;
+            padding:20px;
+            border-radius:10px;
+            background:#f8f8f8;
+        }
+
+        .important{
+            color:red;
+            font-weight:bold;
+        }
+
+        table{
+            width:100%;
+            border-collapse: collapse;
+        }
+
+        td{
+            padding:10px;
+            border:1px solid #ddd;
+        }
+
+        .btn{
+            margin-top:20px;
+            padding:10px 20px;
+            cursor:pointer;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <h1>綠界 ATM 付款資訊</h1>
+
+    <div class="info-box">
+        <table>
+            <!-- <tr>
+                <td>test</td>
+                <td>{{ content_js_dict }}</td>
+            </tr> -->
+            <tr>
+                <td>訂單編號</td>
+                <td>{{ content_js_dict.merchant_trade_no }}</td>
+            </tr>
+
+            <tr>
+                <td>商品名稱</td>
+                <td>{{ content_js_dict.item_name }}</td>
+            </tr>
+
+            <tr>
+                <td>付款金額</td>
+                <td>{{ content_js_dict.trade_amt }} 元</td>
+            </tr>
+
+            <tr>
+                <td>銀行代碼</td>
+                <td>{{ content_js_dict.bank_code }}</td>
+            </tr>
+
+            <tr>
+                <td>虛擬帳號</td>
+                <td class="important">
+                    {{ content_js_dict.v_account }}
+                </td>
+            </tr>
+
+            <tr>
+                <td>繳費期限</td>
+                <td>
+                    {{ content_js_dict.expire_date }}
+                </td>
+            </tr>
+
+        </table>
+        
+    </div>
+
+    <!-- 回商城 -->
+    <button
+        class="btn"
+        onclick="location.href='http://127.0.0.1:8000/commerce_shop/purchased_products/'">
+
+        回商城
+
+    </button>
+
+</div>
+
+</body>
+</html>

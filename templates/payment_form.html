@@ -1,0 +1,26 @@
+<html>
+  <body>
+    <form id="ecpay_mock-form" method="post" action="http://127.0.0.1:8001/gateway/pay/">
+      <!-- 基本欄位 -->
+      <input type="hidden" name="MerchantID" value="{{ context.MerchantID }}">
+      <input type="hidden" name="MerchantTradeNo" value="{{ context.MerchantTradeNo }}">
+      <input type="hidden" name="MerchantTradeDate" value="{{ context.MerchantTradeDate }}">
+      <input type="hidden" name="TradeAmt" value="{{ context.TradeAmt }}">
+      <input type="hidden" name="TradeDesc" value="{{ context.TradeDesc }}">
+      <input type="hidden" name="ItemName" value="{{ context.ItemName }}">
+      <input type="hidden" name="PaymentType" value="{{ context.payment_type }}">
+      <input type="hidden" name="TradeNo" value="{{ context.TradeNo }}">
+      <!-- <input type="hidden" name="Status" value="{{ context.Status }}"> -->
+
+      <!-- 綠界官方定義 -->
+      <input type="hidden" name="ReturnURL" value="{{ context.ReturnURL }}">
+      <input type="hidden" name="OrderResultURL" value="{{ context.OrderResultURL }}">
+
+      <script>
+      // 自動送出 form，模擬瀏覽器跳轉
+      document.getElementById("ecpay_mock-form").submit();
+    </script>
+
+    </form>
+  </body>
+</html>

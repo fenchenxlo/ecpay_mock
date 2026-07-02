@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>綠界轉跳商城</title>
+</head>
+<body>
+<div class="container">
+    <h2>綠界轉跳商城........</h2>
+    <form id="auto_submit_form" action="http://127.0.0.1:8000/commerce_shop/payment_ok/" method="post">
+        {% csrf_token %}
+        
+        {% for key, value in payment_payload.items %}
+        <!-- 💡 1. 這裡使用 Django 內建的 json_script，將物件安全的轉為 JSON 字串 -->
+            {{ value|json_script:key }}
+        {% endfor %}
+    </form>
+    <script>
+        window.onload = function() {
+            const form = document.getElementById('auto_submit_form');
+            
+            // 💡 1. 在迴圈外面先宣告好變數，避免重覆宣告錯誤
+            let jsonText = '';
+            let hiddenInput = null;
+            
+            {% for key, value in payment_payload.items %}
+                // 💡 2. 每次迴圈只更新變數的值，不用 const
+                jsonText = document.getElementById('{{ key }}').textContent;
+                
+                // 💡 3. 每次迴圈建立一個新的 hidden 欄位
+                hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = '{{ key }}';
+                hiddenInput.value = jsonText.trim(); 
+                
+                // 💡 4. 塞入表單
+                form.appendChild(hiddenInput);
+            {% endfor %}
+            
+            // 5. 確保所有欄位都塞入後，再自動提交
+            form.submit();
+        }
+    </script>
+
+</div>
+
+</body>
+</html>

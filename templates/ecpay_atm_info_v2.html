@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>ATM付款資訊</title>
+
+    <style>
+        body{
+            font-family: Arial, sans-serif;
+            margin:40px;
+        }
+
+        .container{
+            max-width:800px;
+            margin:auto;
+        }
+
+        .info-box{
+            border:1px solid #ccc;
+            padding:20px;
+            border-radius:10px;
+            background:#f8f8f8;
+        }
+
+        .important{
+            color:red;
+            font-weight:bold;
+        }
+
+        table{
+            width:100%;
+            border-collapse: collapse;
+        }
+
+        td{
+            padding:10px;
+            border:1px solid #ddd;
+        }
+
+        .btn{
+            margin-top:20px;
+            padding:10px 20px;
+            cursor:pointer;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <h1>ATM 繳費資訊</h1>
+
+    <div class="info-box">
+    {% for item in content_list %}
+        <table>
+
+            <tr>
+                <td>test</td>
+                <td>{{ item.content_js }}</td>
+            </tr>
+            
+            <tr>
+                <td>訂單編號</td>
+                <td>{{ item.content_js.merchant_trade_no }}</td>
+            </tr>
+
+            <tr>
+                <td>商品名稱</td>
+                <td>{{ item.content_js.item_name }}</td>
+            </tr>
+
+            <tr>
+                <td>付款金額</td>
+                <td>{{ item.content_js.trade_amt }} 元</td>
+            </tr>
+
+            <tr>
+                <td>銀行代碼</td>
+                <td>{{ item.content_js.bank_code }}</td>
+            </tr>
+
+            <tr>
+                <td>虛擬帳號</td>
+                <td class="important">
+                    {{ item.content_js.v_account }}
+                </td>
+            </tr>
+
+            <tr>
+                <td>繳費期限</td>
+                <td>
+                    {{ item.content_js.expire_date }}
+                </td>
+            </tr>
+
+        </table>
+
+        <p class="important">
+            請於繳費期限內完成轉帳，
+            逾期系統將自動取消訂單。
+        </p>
+
+    </div>
+    <!-- 二、模擬銀行付款 -->
+
+    <!-- 修改處: 將 id 改為 class 並用 data-payload 儲存訂單付款資料 -->
+    <button class="pay-btn" data-payload='{{ item.content_js|safe }}'>
+        模擬銀行已入帳
+    </button>
+
+    {% csrf_token %}
+    <script>
+        function getCSRFToken() {
+            return document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+
+        // 修改處: 使用 class 選擇器綁定多個按鈕事件
+        document.addEventListener("DOMContentLoaded", function(){
+            const buttons = document.querySelectorAll(".pay-btn");  // 選取所有付款按鈕
+            buttons.forEach(btn => {
+                btn.addEventListener("click", function(){
+                    const payload = JSON.parse(this.dataset.payload);  // 讀取對應的 payload
+                    fetch("http://127.0.0.1:8001/gateway/simulate_bank_paid/", {
+                        method: "POST",
+                        credentials: "include",
+                        headers: {
+                            "X-CSRFToken": getCSRFToken(),
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(res => res.text())
+                    .then(html => {
+                        document.open();
+                        document.write(html);
+                        document.close();
+                    })
+                    .catch(err => console.error(err));
+                });
+            });
+        });
+
+    </script>
+    {% endfor %}
+    <!-- 回商城 -->
+     <p>{{ item.content_js.payment_info_url }}</p>
+    <button
+        class="btn"
+        onclick="location.href='{{ item.content_js.payment_info_url }}'">
+
+        回商城
+
+    </button>
+
+</div>
+
+</body>
+</html>

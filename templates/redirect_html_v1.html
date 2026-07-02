@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>綠界轉跳商城</title>
+</head>
+<body>
+<div class="container">
+    <h2>綠界轉跳商城........</h2>
+    <form id="f" action="http://127.0.0.1:8000/commerce_shop/payment_ok/" method="post">
+        <input type="hidden" name="content_js" value="{{ content.content_js }}">
+    </form>
+    <script>
+        document.getElementById('f').submit();
+    </script>
+
+</div>
+
+</body>
+</html>

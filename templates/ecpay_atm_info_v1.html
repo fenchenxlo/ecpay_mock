@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>ATM付款資訊</title>
+
+    <style>
+        body{
+            font-family: Arial, sans-serif;
+            margin:40px;
+        }
+
+        .container{
+            max-width:800px;
+            margin:auto;
+        }
+
+        .info-box{
+            border:1px solid #ccc;
+            padding:20px;
+            border-radius:10px;
+            background:#f8f8f8;
+        }
+
+        .important{
+            color:red;
+            font-weight:bold;
+        }
+
+        table{
+            width:100%;
+            border-collapse: collapse;
+        }
+
+        td{
+            padding:10px;
+            border:1px solid #ddd;
+        }
+
+        .btn{
+            margin-top:20px;
+            padding:10px 20px;
+            cursor:pointer;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <h1>ATM 繳費資訊</h1>
+
+    <div class="info-box">
+
+        <table>
+
+            <tr>
+                <td>訂單編號</td>
+                <td>{{ merchant_trade_no }}</td>
+            </tr>
+
+            <tr>
+                <td>商品名稱</td>
+                <td>{{ item_name }}</td>
+            </tr>
+
+            <tr>
+                <td>付款金額</td>
+                <td>{{ trade_amt }} 元</td>
+            </tr>
+
+            <tr>
+                <td>銀行代碼</td>
+                <td>{{ bank_code }}</td>
+            </tr>
+
+            <tr>
+                <td>虛擬帳號</td>
+                <td class="important">
+                    {{ v_account }}
+                </td>
+            </tr>
+
+            <tr>
+                <td>繳費期限</td>
+                <td>
+                    {{ expire_date }}
+                </td>
+            </tr>
+
+        </table>
+
+        <p class="important">
+            請於繳費期限內完成轉帳，
+            逾期系統將自動取消訂單。
+        </p>
+
+    </div>
+    <!-- 二、模擬銀行付款 -->
+    <form method="post" action="{% url 'simulate_bank_paid' merchant_trade_no %}">
+
+        {% csrf_token %}
+
+        <button type="submit">
+
+            模擬銀行已入帳
+
+        </button>
+
+    </form>
+
+    <!-- 回商城 -->
+    <button
+        class="btn"
+        onclick="location.href='{{ return_url }}'">
+
+        回商城
+
+    </button>
+
+</div>
+
+</body>
+</html>
