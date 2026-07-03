@@ -46,7 +46,7 @@ else:
     BACKEND_URL = "http://127.0.0.1:8001"
 
 ALLOWED_HOSTS = [
-	'monzid1-ecpay_mock.hf.space',
+	'monzid1-ecpay-mock.hf.space',
 	'proxy.spaces.internal.huggingface.tech'
 ]
 
