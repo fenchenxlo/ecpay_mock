@@ -20,4 +20,5 @@ from django.urls import path, include
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("gateway/", include("gateway.urls")),  # 把 gateway app 的 urls 串進來
+    path("", lambda request: HttpResponse("ECPay Mock Server OK")),
 ]
