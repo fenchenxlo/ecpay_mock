@@ -355,7 +355,8 @@ def ecpay_gateway_checkout(request):
 #     content = {'content_js': content_js}
     content = {
         "content_js_dict": content_js,  # 原始 dict，給模板顯示用
-        "content_js_json": json.dumps(content_js, ensure_ascii=False, default=str)  # JSON 字串，給 JS 用
+        "content_js_json": json.dumps(content_js, ensure_ascii=False, default=str),  # JSON 字串，給 JS 用
+        "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL
     }
     
     return render(request, "atm_info.html", content)
