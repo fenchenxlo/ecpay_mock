@@ -205,7 +205,7 @@ def payment_notify(request):
 
 @csrf_exempt
 def payment_info(request):
-    return redirect('payment_info')
+    return redirect('payment_info',{'HF_SPACE_E_COMMERCE_URL': settings.HF_SPACE_E_COMMERCE_URL})
 
 # 建立 ATM 訂單 ,及顯示ATM資訊頁面, 並通知銀行端
 @csrf_exempt
@@ -306,9 +306,9 @@ def ecpay_gateway_checkout(request):
                 'payment_type': payment_data.get("payment_type", "aio"),
                 'trade_no': payment_data.get("transaction_id"),
                 'status': "atm_created",
-                'return_url': payment_data.get("ReturnURL", "http://127.0.0.1:8000/commerce_shop/ecpay_mock_notify/"),
-                'payment_info_url': payment_data.get("PaymentInfoUrl", "http://127.0.0.1:8001/gateway/payment_info/"),
-                'order_result_url': payment_data.get("OrderResultURL", "http://127.0.0.1:8000/commerce_shop/payment_ok/"),
+                'return_url': payment_data.get("ReturnURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/ecpay_mock_notify/"),
+                'payment_info_url': payment_data.get("PaymentInfoUrl", f"{settings.HF_SPACE_ECPAY_MOCK_URL}/gateway/payment_info/"),
+                'order_result_url': payment_data.get("OrderResultURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_ok/"),
                 'check_mac_value': received_mac,
                 'bank_code': "013", # 國泰世華銀行代碼
                 'v_account': f"013{random.randint(100000000000,999999999999)}", # 虛擬帳戶
