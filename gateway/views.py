@@ -268,6 +268,8 @@ def ecpay_gateway_checkout(request):
     print(type(res_status))
         
     if res_status["status"] == False:
+        error_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/"
+        print("redirect to error_url =", error_url)   # 先加這行確認實際值
         return redirect(f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/")        
 #             return redirect('http://127.0.0.1:8000/commerce_shop/purchased_products/')
 #             return JsonResponse({
