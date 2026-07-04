@@ -47,7 +47,7 @@ def notify_bank(payment_data):
 
         response = httpx.post(
 
-            "http://127.0.0.1:8002/notify/create_account/",
+            f"{HF_SPACE_BANK_SITE_URL}/notify/create_account/",
 
             json=payload,
 
@@ -269,8 +269,8 @@ def ecpay_gateway_checkout(request):
         
     if res_status["status"] == False:
         error_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/"
-        print("redirect to error_url =", error_url)   # 先加這行確認實際值
-        return redirect(f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/")        
+#        print("redirect to error_url =", error_url)   # 先加這行確認實際值
+        return redirect(error_url)        
 #             return redirect('http://127.0.0.1:8000/commerce_shop/purchased_products/')
 #             return JsonResponse({
 #                 "tags":"error",
@@ -730,7 +730,7 @@ def order_result(request):
 #     context = json.dumps(context, ensure_ascii=False)
     content = {'content_js': context}
     html = f"""
-    <form id="f" action="http://127.0.0.1:8000/commerce_shop/payment_ok/" method="post">
+    <form id="f" action=f"{HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_ok/" method="post">
         <input type="hidden" name="content_js" value="{content['content_js']}">
     </form>
     <script>
@@ -738,7 +738,6 @@ def order_result(request):
     </script>
     """
     return HttpResponse(html)
-
 
 @csrf_exempt
 def ecpay_checkout(request):
@@ -773,9 +772,9 @@ def ecpay_checkout(request):
             trade_no = data.get("TransactionID"),  # 模擬綠界交易編號
             status = data.get("Status"), # 訂單狀態
             order = Order.objects.get(order_number=data.get("MerchantTradeNo")),
-            return_url = data.get("ReturnURL", "http://127.0.0.1:8000/commerce_shop/ecpay_mock_notify/"), # server-to-server callback, # 綠界回傳 URL
-            payment_info_url = data.get("PaymentInfoUrl", "http://127.0.0.1:8000/commerce_shop/payment_info/"),  # 綠界通知商城已取虛擬帳號
-            order_result_url = data.get("OrderResultURL", "http://127.0.0.1:8000/commerce_shop/payment-ok/"), # browser redirect ,瀏覽器跳轉 URL
+            return_url = data.get("ReturnURL", f"{HF_SPACE_E_COMMERCE_URL}/commerce_shop/ecpay_mock_notify/"), # server-to-server callback, # 綠界回傳 URL
+            payment_info_url = data.get("PaymentInfoUrl", f"{HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_info/"),  # 綠界通知商城已取虛擬帳號
+            order_result_url = data.get("OrderResultURL", f"{HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment-ok/"), # browser redirect ,瀏覽器跳轉 URL
             check_mac_value = data.get("CheckMacValue"),
         )
         
