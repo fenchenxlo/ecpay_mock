@@ -34,7 +34,7 @@ DEBUG = True
 BACKEND_URL = ""
 
 if "SPACE_HOST" in os.environ:
-    # 優先使用官方直接提供的完整網域 (例如: monzid1-e-commerce.hf.space)
+    # 優先使用官方直接提供的完整網域 (例如: monzid1-ecpay-mock.hf.space)
     BACKEND_URL = f"https://{os.environ.get('SPACE_HOST')}"
 elif "SPACE_ID" in os.environ:
     # 備用方案：如果只有 SPACE_ID，手動轉換拼湊
@@ -176,8 +176,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 SITE_ID = 2
 
 # 綠界測試環境
-ECPAY_HASH_KEY = "pwFHCqoQZGmho4w6"
-ECPAY_HASH_IV = "EkRm7iFT261dpevs"
+ECPAY_MERCHANT_ID = "3002607"
+ECPAY_HASH_KEY = os.environ.get('ECPAY_HASH_KEY', '')
+ECPAY_HASH_IV = os.environ.get('ECPAY_HASH_IV', '')
 
 # -------------------------------
 # 🔑 CORS & CSRF 設定
