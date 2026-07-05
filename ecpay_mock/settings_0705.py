@@ -121,12 +121,10 @@ WSGI_APPLICATION = 'ecpay_mock.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DB_PATH = os.environ.get('SQLITE_DB_PATH', str(BASE_DIR / 'db.sqlite3'))
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': DB_PATH,
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
