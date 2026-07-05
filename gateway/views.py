@@ -47,7 +47,7 @@ def notify_bank(payment_data):
 
         response = httpx.post(
 
-            f"{HF_SPACE_BANK_SITE_URL}/notify/create_account/",
+            f"{settings.HF_SPACE_BANK_SITE_URL}/notify/create_account/",
 
             json=payload,
 
@@ -235,10 +235,9 @@ def ecpay_gateway_checkout(request):
         return HttpResponseBadRequest("JSON 格式錯誤")
 #    payment_data = request.POST.dict()
     
-    received_mac = payment_data.copy()
 
-    received_mac = received_mac.pop("check_mac_value","")
-    payment_data1 = payment_data.pop("check_mac_value","")
+    received_mac = payment_data.pop("check_mac_value","")
+
     expected_mac = generate_check_mac_value(
         payment_data,
         settings.ECPAY_HASH_KEY,
@@ -380,10 +379,8 @@ def simulate_bank_paid(request):
         return HttpResponseBadRequest("JSON 格式錯誤")
     print("2")
     
-    received_mac = payment_payload.copy()
+    received_mac = payment_payload.pop("check_mac_value","")
 
-    received_mac = received_mac.pop("check_mac_value","")
-    payment_payload1 = payment_payload.pop("check_mac_value","")
     expected_mac = generate_check_mac_value(
         payment_payload,
         settings.ECPAY_HASH_KEY,
@@ -485,7 +482,8 @@ def simulate_bank_paid(request):
     print("payment_payload: ", payment_payload)
     content = {
         "payment_payload_dict": payment_payload,  # 原始 dict，給模板顯示用
-        "payment_payload_json": json.dumps(payment_payload, ensure_ascii=False, default=str)  # JSON 字串，給 JS 用
+        "payment_payload_json": json.dumps(payment_payload, ensure_ascii=False, default=str),  # JSON 字串，給 JS 用
+        "HF_SPACE_E_COMMERCE_URL": HF_SPACE_E_COMMERCE_URL,
     }
 #     return redirect('order_result', content)
 #     return redirect('order_result')
@@ -640,6 +638,8 @@ def download_orderPayment_json(request):
             f'attachment; filename="ecpay_data_{merchant_trade_no}.json"'
         )
 
+    response["HF_SPACE_E_COMMERCE_URL"] = settings.HF_SPACE_E_COMMERCE_URL
+    
     return response
 
 def export_api_schema(request):
@@ -731,7 +731,7 @@ def order_result(request):
 #     context = json.dumps(context, ensure_ascii=False)
     content = {'content_js': context}
     html = f"""
-    <form id="f" action=f"{HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_ok/" method="post">
+    <form id="f" action=f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_ok/" method="post">
         <input type="hidden" name="content_js" value="{content['content_js']}">
     </form>
     <script>
@@ -773,9 +773,9 @@ def ecpay_checkout(request):
             trade_no = data.get("TransactionID"),  # 模擬綠界交易編號
             status = data.get("Status"), # 訂單狀態
             order = Order.objects.get(order_number=data.get("MerchantTradeNo")),
-            return_url = data.get("ReturnURL", f"{HF_SPACE_E_COMMERCE_URL}/commerce_shop/ecpay_mock_notify/"), # server-to-server callback, # 綠界回傳 URL
-            payment_info_url = data.get("PaymentInfoUrl", f"{HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_info/"),  # 綠界通知商城已取虛擬帳號
-            order_result_url = data.get("OrderResultURL", f"{HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment-ok/"), # browser redirect ,瀏覽器跳轉 URL
+            return_url = data.get("ReturnURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/ecpay_mock_notify/"), # server-to-server callback, # 綠界回傳 URL
+            payment_info_url = data.get("PaymentInfoUrl", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_info/"),  # 綠界通知商城已取虛擬帳號
+            order_result_url = data.get("OrderResultURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment-ok/"), # browser redirect ,瀏覽器跳轉 URL
             check_mac_value = data.get("CheckMacValue"),
         )
         
@@ -857,8 +857,8 @@ def ecpay_mock_pay(request):
         payment_type = request.POST.get("PaymentType", "ATM")  # 預設 ATM
         trade_no = request.POST.get("TradeNo")
 #         status = request.POST.get("Status") # 訂單狀態
-        return_url = request.POST.get("ReturnURL", f"{HF_SPACE_E_COMMERCE_UR}/ecpay_mock_notify/")
-        order_result_url = request.POST.get("OrderResultURL", f"{HF_SPACE_E_COMMERCE_UR}/payment-ok/")
+        return_url = request.POST.get("ReturnURL", f"{settings.HF_SPACE_E_COMMERCE_UR}/ecpay_mock_notify/")
+        order_result_url = request.POST.get("OrderResultURL", f"{settings.HF_SPACE_E_COMMERCE_UR}/payment-ok/")
         
         # 模擬產生 ATM 虛擬帳號與繳費期限
         bank_code = "013"  # 國泰世華銀行代碼
