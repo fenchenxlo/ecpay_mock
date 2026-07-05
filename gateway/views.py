@@ -271,7 +271,7 @@ def ecpay_gateway_checkout(request):
         error_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/"
 #        print("redirect to error_url =", error_url)   # 先加這行確認實際值
         return redirect(error_url)        
-#             return redirect('http://127.0.0.1:8000/commerce_shop/purchased_products/')
+#             return redirect(f'{HF_SPACE_E_COMMERCE_UR}/commerce_shop/purchased_products/')
 #             return JsonResponse({
 #                 "tags":"error",
 #                 "messages": ["銀行通知失敗: VirtualAccount取得或建立失敗"],
@@ -857,8 +857,8 @@ def ecpay_mock_pay(request):
         payment_type = request.POST.get("PaymentType", "ATM")  # 預設 ATM
         trade_no = request.POST.get("TradeNo")
 #         status = request.POST.get("Status") # 訂單狀態
-        return_url = request.POST.get("ReturnURL", "http://127.0.0.1:8000/ecpay_mock_notify/")
-        order_result_url = request.POST.get("OrderResultURL", "http://127.0.0.1:8000/payment-ok/")
+        return_url = request.POST.get("ReturnURL", f"{HF_SPACE_E_COMMERCE_UR}/ecpay_mock_notify/")
+        order_result_url = request.POST.get("OrderResultURL", f"{HF_SPACE_E_COMMERCE_UR}/payment-ok/")
         
         # 模擬產生 ATM 虛擬帳號與繳費期限
         bank_code = "013"  # 國泰世華銀行代碼
