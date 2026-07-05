@@ -100,7 +100,8 @@
             buttons.forEach(btn => {
                 btn.addEventListener("click", function(){
                     const payload = JSON.parse(this.dataset.payload);  // 讀取對應的 payload
-                    fetch("http://127.0.0.1:8000/commerce_shop/payment_ok/", {
+                    //fetch("http://127.0.0.1:8000/commerce_shop/payment_ok/", {
+					fetch("{{HF_SPACE_E_COMMERCE_URL}}/commerce_shop/payment_ok/", {
                         method: "POST",
                         credentials: "include",
                         headers: {
