@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="UTF-8"><title>ECPay Mock</title></head>
+<body>
+    <h1>ECPay Mock Gateway</h1>
+    {% if user.is_authenticated and user.is_superuser %}
+        <p><a href="{% url 'db_query_tool' %}">🔍 資料庫查詢工具</a></p>
+    {% endif %}
+</body>
+</html>

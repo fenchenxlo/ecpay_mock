@@ -12,10 +12,12 @@ from gateway.views import (
 #     create_atm_order,
 #     createOrder,
     ecpay_mock_pay,
-    ecpay_notify,  
+    ecpay_notify,
+    db_query_tool,   # 新增
 )
 
 urlpatterns = [
+    path('', TemplateView.as_view(template_name='home.html'), name='home'),  # 新增最簡首頁
     path("ecpay_gateway_checkout/", ecpay_gateway_checkout, name="ecpay_gateway_checkout"),  # 商城送資料 → 綠界
 #     path("simulate_bank_paid/<str:merchant_trade_no>/", simulate_bank_paid, name="simulate_bank_paid"),
     path("simulate_bank_paid/", simulate_bank_paid, name="simulate_bank_paid"),
@@ -31,4 +33,5 @@ urlpatterns = [
 #     path("createOrder/", createOrder, name="createOrder"),  # 商城送資料 → 綠界建立訂單
     path("pay/", ecpay_mock_pay, name="ecpay_mock_pay"),                 # 綠界付款頁 (ATM 虛擬帳號)
     path("notify/", ecpay_notify, name="ecpay_notify"),        # 綠界 server-to-server 回傳
+    path("admin-tools/query/", db_query_tool, name="db_query_tool"),  # 新增
 ]
