@@ -18,7 +18,7 @@ def notify_shop_paid(payload):
 
     response = httpx.post(
 
-        "http://127.0.0.1:8000/commerce_shop/payment_callback/",
+        f"{settings.HF_SPACE_E_COMMERCE_URL}commerce_shop/payment_callback/",
 
         json=payload,
 
@@ -42,7 +42,7 @@ def notify_shop_failed(payload):
 
     response = httpx.post(
 
-        "http://127.0.0.1:8000/commerce_shop/payment_callback/",
+        f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_callback/",
 
         json=payload,
 
