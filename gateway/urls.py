@@ -1,4 +1,5 @@
 from django.urls import path,include
+from django.views.generic import TemplateView
 from gateway.views import (
     ecpay_gateway_checkout,
     simulate_bank_paid,
