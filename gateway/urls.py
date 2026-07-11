@@ -18,7 +18,6 @@ from gateway.views import (
 )
 
 urlpatterns = [
-    path('', TemplateView.as_view(template_name='home.html'), name='home'),  # 新增最簡首頁
     path("ecpay_gateway_checkout/", ecpay_gateway_checkout, name="ecpay_gateway_checkout"),  # 商城送資料 → 綠界
 #     path("simulate_bank_paid/<str:merchant_trade_no>/", simulate_bank_paid, name="simulate_bank_paid"),
     path("simulate_bank_paid/", simulate_bank_paid, name="simulate_bank_paid"),
