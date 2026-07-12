@@ -1,6 +1,7 @@
 from django.urls import path,include
 from django.views.generic import TemplateView
 from gateway.views import (
+    home,
     ecpay_gateway_checkout,
     simulate_bank_paid,
     payment_info,
@@ -18,6 +19,7 @@ from gateway.views import (
 )
 
 urlpatterns = [
+    path('', home, name='home'),
     path("ecpay_gateway_checkout/", ecpay_gateway_checkout, name="ecpay_gateway_checkout"),  # 商城送資料 → 綠界
 #     path("simulate_bank_paid/<str:merchant_trade_no>/", simulate_bank_paid, name="simulate_bank_paid"),
     path("simulate_bank_paid/", simulate_bank_paid, name="simulate_bank_paid"),
