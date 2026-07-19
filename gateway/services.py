@@ -18,7 +18,7 @@ def notify_shop_paid(payload):
 
     response = httpx.post(
 
-        f"{settings.HF_SPACE_E_COMMERCE_URL}commerce_shop/payment_callback/",
+        f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_callback/",
 
         json=payload,
 
