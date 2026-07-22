@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>選擇取貨門市</title>
+    <link rel="stylesheet" href="{% static 'css/leaflet.css' %}">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; }
+        .container { max-width: 900px; margin: 20px auto; padding: 0 20px; }
+        #map { height: 400px; border-radius: 10px; margin-bottom: 20px; }
+        .store-list { list-style: none; padding: 0; }
+        .store-item {
+            border: 1px solid #ddd; border-radius: 8px; padding: 12px;
+            margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between;
+        }
+        .store-item:hover { background: #f5f5f5; }
+        .store-item.selected { border-color: #2b7de9; background: #eef5ff; }
+        .chain-tag {
+            display: inline-block; font-size: 12px; padding: 2px 8px;
+            border-radius: 4px; background: #eee; margin-right: 8px;
+        }
+        .btn {
+            margin-top: 16px; padding: 10px 24px; font-size: 16px;
+            cursor: pointer; background: #2b7de9; color: #fff; border: none; border-radius: 6px;
+        }
+        .btn:disabled { background: #aaa; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+<!-- 【修改】{% load static %} 移到最上面(DOCTYPE 後),避免萬一之後在 <head> 也要用 static 標籤時漏載 -->
+<script src="{% static 'js/leaflet.js' %}"></script>
+
+<div class="container">
+    <h1>請選擇取貨門市</h1>
+    <p>訂單編號：{{ merchant_trade_no }}</p>
+
+    <div id="map"></div>
+
+    <ul class="store-list" id="storeList"></ul>
+
+    <form id="confirmForm" method="post" action="{% url 'confirm_store' %}">
+        {% csrf_token %}
+        <input type="hidden" name="store_id" id="storeIdInput">
+        <button type="submit" class="btn" id="confirmBtn" disabled>確認選擇此門市</button>
+    </form>
+</div>
+
+<script>
+    // try/catch 包住整段初始化邏輯:避免 stores_json 格式異常時整頁白屏,
+    // 至少在 console 印出明確錯誤方便除錯。
+    try {
+        const stores = {{ stores_json|safe }};
+
+        if (!Array.isArray(stores) || stores.length === 0) {
+            throw new Error("門市清單是空的,請確認後端 MOCK_STORES 設定");
+        }
+
+        const map = L.map('map').setView([stores[0].lat, stores[0].lng], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        const markers = {};
+        const listEl = document.getElementById('storeList');
+        const storeIdInput = document.getElementById('storeIdInput');
+        const confirmBtn = document.getElementById('confirmBtn');
+
+        function selectStore(storeId) {
+            storeIdInput.value = storeId;
+            confirmBtn.disabled = false;
+
+            document.querySelectorAll('.store-item').forEach(el => {
+                el.classList.toggle('selected', el.dataset.storeId === storeId);
+            });
+            Object.entries(markers).forEach(([id, marker]) => {
+                marker.setIcon(L.icon({
+                    // 【修改】static 資料夾實際結構是 static/images/color-markers/... (images 有 s,
+                    // 且底下確實有 color-markers 子資料夾放紅藍 marker 圖示),照截圖修正路徑
+                    iconUrl: id === storeId
+						? "{% static 'images/color-markers/marker-icon-2x-red.png' %}"
+						: "{% static 'images/color-markers/marker-icon-2x-blue.png' %}",
+                    iconSize: [25, 41], iconAnchor: [12, 41]
+                }));
+            });
+        }
+
+        stores.forEach(store => {
+            const marker = L.marker([store.lat, store.lng]).addTo(map)
+                .bindPopup(`<b>${store.name}</b><br>${store.address}`);
+            marker.on('click', () => selectStore(store.store_id));
+            markers[store.store_id] = marker;
+
+            const li = document.createElement('li');
+            li.className = 'store-item';
+            li.dataset.storeId = store.store_id;
+            li.innerHTML = `
+                <div>
+                    <span class="chain-tag">${store.chain}</span>
+                    <b>${store.name}</b><br>
+                    <small>${store.address}</small>
+                </div>
+            `;
+            li.addEventListener('click', () => {
+                selectStore(store.store_id);
+                map.setView([store.lat, store.lng], 16);
+            });
+            listEl.appendChild(li);
+        });
+
+        // 表單送出前的最後防呆:確保有選門市才能送出
+        document.getElementById('confirmForm').addEventListener('submit', function (evt) {
+            if (!storeIdInput.value) {
+                evt.preventDefault();
+                alert('請先選擇一個取貨門市');
+            }
+        });
+
+    } catch (err) {
+        console.error("❌ [select_store.html] 地圖初始化失敗:", err);
+        document.getElementById('map').innerHTML =
+            '<p style="color:red;">地圖載入失敗,請重新整理頁面或聯絡客服。</p>';
+    }
+</script>
+</body>
+</html>
