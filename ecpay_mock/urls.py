@@ -26,6 +26,7 @@ urlpatterns = [
     path('', home, name='home'),
     path("admin/", admin.site.urls),
     path("gateway/", include("gateway.urls")),  # 把 gateway app 的 urls 串進來
+	path("cod_gateway/", include("cod_gateway.urls")),  # 新增
 #    path('', TemplateView.as_view(template_name='home.html'), name='home'),  # 新增：根目錄首頁
 #    path("", lambda request: HttpResponse("ECPay Mock Server OK")),
 ]

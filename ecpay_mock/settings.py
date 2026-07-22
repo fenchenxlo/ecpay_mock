@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'gateway',          # 你的 fake 綠界 app
+	'cod_gateway',   # 新增
     'corsheaders',      # 新增 CORS 支援
 ]
 
