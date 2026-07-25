@@ -93,7 +93,7 @@ SECURE_CSP = {
     "default-src": [CSP.SELF],
     "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],   # 允許 inline style   
     "script-src": [CSP.SELF, CSP.UNSAFE_INLINE],  # 允許 inline script
-    "img-src": [CSP.SELF, "https:"],
+    "img-src": [CSP.SELF, "https:", "data:"],
     "frame-ancestors": ["https://huggingface.co"],  # 允許 HF 嵌入
 }
 
