@@ -56,7 +56,7 @@ def _log_and_build_error_response(view_name, exception, status=500):
 	"""
 	error_type = type(exception).__name__
 	error_message = str(exception)
-	logger.exception(f"❌ [{view_name}] {error_type}: {error_message})
+	logger.exception(f"❌ [{view_name}] {error_type}: {error_message}")
 	logger.exception(traceback.format_exc())  # 印出完整 traceback,包含行號、呼叫鏈
 #	 print(f"❌ [{view_name}] {error_type}: {error_message}")
 #	 print(traceback.format_exc())	# 印出完整 traceback,包含行號、呼叫鏈
