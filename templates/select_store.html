@@ -39,7 +39,7 @@
 
     <ul class="store-list" id="storeList"></ul>
 
-    <form id="confirmForm" method="post" action="{% url 'confirm_store' %}">
+    <form id="confirmForm" method="post" action="{% url 'review_store' %}">
         {% csrf_token %}
         <input type="hidden" name="store_id" id="storeIdInput">
         <button type="submit" class="btn" id="confirmBtn" disabled>確認選擇此門市</button>

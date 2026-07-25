@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>門市確認失敗</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 600px; margin: auto; text-align: center; }
+        .error-box {
+            border: 1px solid #e57373; background: #fff3f3;
+            padding: 24px; border-radius: 10px; color: #c62828;
+        }
+        .btn {
+            margin-top: 20px; padding: 10px 24px; font-size: 15px;
+            cursor: pointer; background: #2b7de9; color: #fff; border: none; border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>門市確認失敗</h1>
+    <div class="error-box">
+        <p>{{ error_message }}</p>
+        <p style="font-size:13px; color:#888;">訂單編號：{{ merchant_trade_no }}</p>
+    </div>
+    <button class="btn" onclick="location.href='{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/'">
+        回商店訂單頁面
+    </button>
+</div>
+</body>
+</html>

@@ -16,7 +16,35 @@ from .services import notify_shop_paid, notify_shop_failed
 from django.contrib.auth.decorators import user_passes_test
 from django.shortcuts import render
 from django.db import connection
+import logging          # 【新增】
 
+logger = logging.getLogger(__name__)   # 【新增】
+
+def _log_and_build_error_response(view_name, exception, status=500):
+    """
+    共用錯誤處理小工具:
+    - 【修改】改用 logging 模組的 logger.exception(),而不是 print() + traceback.format_exc()。
+      logger.exception() 會自動把目前例外的完整 traceback 一起記錄下來,
+      而且透過標準 logging 機制輸出,在 HF Space 的 Logs 分頁能穩定被抓到
+      (print() 在某些情況下可能因為 stdout 緩衝或多執行緒交錯而漏看或亂序)。
+    - 回傳統一格式的 JSON 錯誤訊息給前端,包含：
+        error_type  → Python 例外類別名稱(例如 KeyError, IntegrityError)
+        message     → 例外的詳細訊息
+        view        → 是在哪個 view 發生的,方便定位問題
+    """
+    error_type = type(exception).__name__
+    error_message = str(exception)
+    logger.exception(f"[{view_name}] {error_type}: {error_message}")  # 【修改】
+    return JsonResponse(
+        {
+            "status": "error",
+            "view": view_name,
+            "error_type": error_type,
+            "message": error_message,
+        },
+        status=status,
+    )
+	
 def home(request):   
     return render(request, 'home.html')
 

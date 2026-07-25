@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>確認取貨門市</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 700px; margin: auto; }
+        .info-box { border: 1px solid #ccc; padding: 20px; border-radius: 10px; background: #f8f8f8; }
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 10px; border: 1px solid #ddd; }
+        .important { color: red; font-weight: bold; }
+        .hint { color: #888; font-size: 14px; margin-top: 12px; }
+        .btn-group { margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; font-size: 15px; cursor: pointer; border-radius: 6px; border: none; }
+        .btn-primary { background: #2b7de9; color: #fff; }
+        .btn-secondary { background: #eee; color: #333; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>請確認取貨門市資訊</h1>
+    <p>訂單編號：{{ merchant_trade_no }}</p>
+
+    <div class="info-box">
+        <table>
+            <tr><td>付款方式</td><td>超商取貨付款(貨到付現)</td></tr>
+            <tr><td>商品名稱</td><td>{{ cod_payment.item_name }}</td></tr>
+            <tr><td>應付金額</td><td class="important">{{ cod_payment.trade_amt }} 元</td></tr>
+            <tr><td>選擇門市</td><td>{{ store.name }}</td></tr>
+            <tr><td>門市地址</td><td>{{ store.address }}</td></tr>
+            <tr><td>收件人</td><td>{{ cod_payment.receiver_name }}</td></tr>
+        </table>
+    </div>
+
+    <p class="hint">請確認以上資訊無誤。門市選錯可以按「重新選擇門市」；
+        想改回 ATM 付款,請按「回商店訂單頁修改付款方式」。</p>
+
+    <div class="btn-group">
+        <!-- 確認送出:這裡才真正呼叫 confirm_store 寫入 DB + 通知商城 -->
+        <form method="post" action="{% url 'confirm_store' %}">
+            {% csrf_token %}
+            <input type="hidden" name="store_id" value="{{ store.store_id }}">
+            <button type="submit" class="btn btn-primary">確認無誤,送出</button>
+        </form>
+
+        <!-- 重新選擇門市:純導頁,不會動到任何資料 -->
+        <form method="get" action="{% url 'select_store' %}">
+            <button type="submit" class="btn btn-secondary">重新選擇門市</button>
+        </form>
+
+        <!-- 回商店訂單頁修改付款方式 -->
+        <button type="button" class="btn btn-secondary"
+                onclick="location.href='{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/'">
+            回商店訂單頁修改付款方式
+        </button>
+    </div>
+</div>
+</body>
+</html>
