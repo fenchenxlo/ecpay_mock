@@ -152,7 +152,15 @@ def cod_checkout(request):
 				},
 			)
 
-			cod_payment, created = CODPaymentRequest.objects.get_or_create(
+			# 【修改】get_or_create → update_or_create
+			# 原本用 get_or_create,如果這筆 merchant_trade_no 已經存在(例如使用者重新整理、
+			# 重新走一次結帳流程),defaults 裡的新資料(receiver_name 等)完全不會被拿來更新,
+			# 只會撈出舊紀錄直接回傳,導致收件人姓名/地址等欄位卡在第一次建立時的舊值(甚至空值)。
+			# 改成 update_or_create 後,不管這筆紀錄存不存在,defaults 都會被寫入/覆蓋,
+			# 確保每次使用者重新確認收件資訊時,COD 這邊的紀錄都會同步更新成最新資料。
+			# 注意:defaults 裡沒有包含 store_id/store_name 等門市欄位,所以已經選定的門市
+			# 不會被這次更新清空(update_or_create 只動 defaults 裡明確列出的欄位)。
+			cod_payment, created = CODPaymentRequest.objects.update_or_create(
 				merchant_trade_no=merchant_trade_no,
 				defaults={
 					"order": order_obj,
@@ -161,6 +169,7 @@ def cod_checkout(request):
 					"item_name": payment_data.get("item_name", ""),
 					"receiver_name": payment_data.get("receiver_name", "王大明"),
 					"receiver_cell_phone": payment_data.get("receiver_cell_phone", ""),
+					"receiver_address": payment_data.get("receiver_address", ""),
 					"status": "cod_created",
 					"check_mac_value": received_mac,
 					"return_url": payment_data.get("ReturnURL", ""),
