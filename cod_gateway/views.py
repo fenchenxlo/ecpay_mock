@@ -21,17 +21,437 @@ logger = logging.getLogger(__name__)   # 【新增】
 # 模擬門市清單(demo 用固定座標,不用真的串接綠界電子地圖 API)
 # ─────────────────────────────────────────────
 MOCK_STORES = [
-	{"store_id": "991182", "name": "7-ELEVEN 桃園中正門市", "chain": "UNIMART",
-	 "address": "桃園市桃園區中正路100號", "lat": 24.9936, "lng": 121.3010},
-	{"store_id": "991183", "name": "7-ELEVEN 桃園站前門市", "chain": "UNIMART",
-	 "address": "桃園市桃園區站前路50號", "lat": 24.9880, "lng": 121.3125},
-	{"store_id": "006598", "name": "全家 桃園藝文店", "chain": "FAMI",
-	 "address": "桃園市桃園區藝文路20號", "lat": 24.9930, "lng": 121.3210},
-	{"store_id": "2001", "name": "萊爾富 桃園復興店", "chain": "HILIFE",
-	 "address": "桃園市桃園區復興路88號", "lat": 24.9850, "lng": 121.3050},
-	{"store_id": "OK1001", "name": "OK超商 桃園中山店", "chain": "OKMART",
-	 "address": "桃園市桃園區中山路15號", "lat": 24.9905, "lng": 121.3155},
-]
+    # ─────────────────────────────────────────────
+    # 桃園市 10 間
+    # ─────────────────────────────────────────────
+    {
+        "store_id": "TY001",
+        "name": "7-ELEVEN 桃園中正門市",
+        "chain": "UNIMART",
+        "address": "桃園市桃園區中正路100號",
+        "lat": 24.9936,
+        "lng": 121.3010,
+    },
+    {
+        "store_id": "TY002",
+        "name": "7-ELEVEN 桃園站前門市",
+        "chain": "UNIMART",
+        "address": "桃園市桃園區站前路50號",
+        "lat": 24.9880,
+        "lng": 121.3125,
+    },
+    {
+        "store_id": "TY003",
+        "name": "全家 桃園藝文店",
+        "chain": "FAMI",
+        "address": "桃園市桃園區藝文路20號",
+        "lat": 24.9930,
+        "lng": 121.3210,
+    },
+    {
+        "store_id": "TY004",
+        "name": "全家 中壢火車站店",
+        "chain": "FAMI",
+        "address": "桃園市中壢區中和路200號",
+        "lat": 24.9538,
+        "lng": 121.2258,
+    },
+    {
+        "store_id": "TY005",
+        "name": "萊爾富 桃園復興店",
+        "chain": "HILIFE",
+        "address": "桃園市桃園區復興路88號",
+        "lat": 24.9850,
+        "lng": 121.3050,
+    },
+    {
+        "store_id": "TY006",
+        "name": "OK超商 桃園中山店",
+        "chain": "OKMART",
+        "address": "桃園市桃園區中山路15號",
+        "lat": 24.9905,
+        "lng": 121.3155,
+    },
+    {
+        "store_id": "TY007",
+        "name": "7-ELEVEN 楊梅新城店",
+        "chain": "UNIMART",
+        "address": "桃園市楊梅區新城路30號",
+        "lat": 24.9100,
+        "lng": 121.1450,
+    },
+    {
+        "store_id": "TY008",
+        "name": "全家 龜山長庚店",
+        "chain": "FAMI",
+        "address": "桃園市龜山區復興一路150號",
+        "lat": 25.0600,
+        "lng": 121.3650,
+    },
+    {
+        "store_id": "TY009",
+        "name": "萊爾富 八德廣福店",
+        "chain": "HILIFE",
+        "address": "桃園市八德區廣福路100號",
+        "lat": 24.9580,
+        "lng": 121.2980,
+    },
+    {
+        "store_id": "TY010",
+        "name": "OK超商 蘆竹南崁店",
+        "chain": "OKMART",
+        "address": "桃園市蘆竹區南崁路200號",
+        "lat": 25.0460,
+        "lng": 121.2950,
+    },
+] 
+# ─────────────────────────────────────────────
+ # 新竹市 10 間 
+# ───────────────────────────────────────────── 
+
+MOCK_STORES.extend([
+    {
+        "store_id": "HC001",
+        "name": "7-ELEVEN 新竹東門店",
+        "chain": "UNIMART",
+        "address": "新竹市東區東門街50號",
+        "lat": 24.8047,
+        "lng": 120.9685,
+    },
+    {
+        "store_id": "HC002",
+        "name": "7-ELEVEN 新竹科園店",
+        "chain": "UNIMART",
+        "address": "新竹市東區光復路二段200號",
+        "lat": 24.7989,
+        "lng": 120.9937,
+    },
+    {
+        "store_id": "HC003",
+        "name": "全家 新竹火車站店",
+        "chain": "FAMI",
+        "address": "新竹市東區中正路1號",
+        "lat": 24.8010,
+        "lng": 120.9710,
+    },
+    {
+        "store_id": "HC004",
+        "name": "全家 清大店",
+        "chain": "FAMI",
+        "address": "新竹市東區光復路二段101號",
+        "lat": 24.7950,
+        "lng": 120.9960,
+    },
+    {
+        "store_id": "HC005",
+        "name": "萊爾富 新竹北大店",
+        "chain": "HILIFE",
+        "address": "新竹市北區北大路120號",
+        "lat": 24.8100,
+        "lng": 120.9650,
+    },
+    {
+        "store_id": "HC006",
+        "name": "OK超商 新竹南大店",
+        "chain": "OKMART",
+        "address": "新竹市東區南大路80號",
+        "lat": 24.7955,
+        "lng": 120.9680,
+    },
+    {
+        "store_id": "HC007",
+        "name": "7-ELEVEN 香山店",
+        "chain": "UNIMART",
+        "address": "新竹市香山區中華路五段50號",
+        "lat": 24.7600,
+        "lng": 120.9200,
+    },
+    {
+        "store_id": "HC008",
+        "name": "全家 新竹巨城店",
+        "chain": "FAMI",
+        "address": "新竹市東區中央路229號",
+        "lat": 24.8090,
+        "lng": 120.9740,
+    },
+    {
+        "store_id": "HC009",
+        "name": "萊爾富 新竹竹科店",
+        "chain": "HILIFE",
+        "address": "新竹市東區研新路88號",
+        "lat": 24.7800,
+        "lng": 121.0100,
+    },
+    {
+        "store_id": "HC010",
+        "name": "OK超商 新竹光復店",
+        "chain": "OKMART",
+        "address": "新竹市東區光復路一段300號",
+        "lat": 24.7830,
+        "lng": 120.9900,
+    },
+])
+
+
+# ───────────────────────────────────────────── 
+# 台北市 10 間 
+# ─────────────────────────────────────────────
+
+MOCK_STORES.extend([
+    {
+        "store_id": "TP001",
+        "name": "7-ELEVEN 台北信義店",
+        "chain": "UNIMART",
+        "address": "台北市信義區信義路五段20號",
+        "lat": 25.0330,
+        "lng": 121.5654,
+    },
+    {
+        "store_id": "TP002",
+        "name": "7-ELEVEN 台北車站店",
+        "chain": "UNIMART",
+        "address": "台北市中正區忠孝西路一段50號",
+        "lat": 25.0478,
+        "lng": 121.5170,
+    },
+    {
+        "store_id": "TP003",
+        "name": "全家 台北西門店",
+        "chain": "FAMI",
+        "address": "台北市萬華區成都路50號",
+        "lat": 25.0420,
+        "lng": 121.5060,
+    },
+    {
+        "store_id": "TP004",
+        "name": "全家 大安森林店",
+        "chain": "FAMI",
+        "address": "台北市大安區信義路三段100號",
+        "lat": 25.0335,
+        "lng": 121.5350,
+    },
+    {
+        "store_id": "TP005",
+        "name": "萊爾富 中山店",
+        "chain": "HILIFE",
+        "address": "台北市中山區南京東路二段80號",
+        "lat": 25.0522,
+        "lng": 121.5327,
+    },
+    {
+        "store_id": "TP006",
+        "name": "OK超商 松山店",
+        "chain": "OKMART",
+        "address": "台北市松山區八德路四段200號",
+        "lat": 25.0490,
+        "lng": 121.5600,
+    },
+    {
+        "store_id": "TP007",
+        "name": "7-ELEVEN 士林店",
+        "chain": "UNIMART",
+        "address": "台北市士林區中正路300號",
+        "lat": 25.0950,
+        "lng": 121.5250,
+    },
+    {
+        "store_id": "TP008",
+        "name": "全家 南港店",
+        "chain": "FAMI",
+        "address": "台北市南港區忠孝東路六段100號",
+        "lat": 25.0480,
+        "lng": 121.5900,
+    },
+    {
+        "store_id": "TP009",
+        "name": "萊爾富 內湖店",
+        "chain": "HILIFE",
+        "address": "台北市內湖區成功路四段100號",
+        "lat": 25.0830,
+        "lng": 121.5950,
+    },
+    {
+        "store_id": "TP010",
+        "name": "OK超商 北投店",
+        "chain": "OKMART",
+        "address": "台北市北投區北投路二段50號",
+        "lat": 25.1320,
+        "lng": 121.4980,
+    },
+])
+
+# ─────────────────────────────────────────────
+# 新北市 10 間
+# ─────────────────────────────────────────────
+
+MOCK_STORES.extend([
+    {
+        "store_id": "NT001",
+        "name": "7-ELEVEN 板橋文化店",
+        "chain": "UNIMART",
+        "address": "新北市板橋區文化路一段120號",
+        "lat": 25.0118,
+        "lng": 121.4618,
+    },
+    {
+        "store_id": "NT002",
+        "name": "7-ELEVEN 新店中正店",
+        "chain": "UNIMART",
+        "address": "新北市新店區中正路200號",
+        "lat": 24.9700,
+        "lng": 121.5410,
+    },
+    {
+        "store_id": "NT003",
+        "name": "全家 三重重新店",
+        "chain": "FAMI",
+        "address": "新北市三重區重新路二段80號",
+        "lat": 25.0610,
+        "lng": 121.4880,
+    },
+    {
+        "store_id": "NT004",
+        "name": "全家 永和中山店",
+        "chain": "FAMI",
+        "address": "新北市永和區中山路一段100號",
+        "lat": 25.0100,
+        "lng": 121.5120,
+    },
+    {
+        "store_id": "NT005",
+        "name": "萊爾富 淡水中正店",
+        "chain": "HILIFE",
+        "address": "新北市淡水區中正路50號",
+        "lat": 25.1670,
+        "lng": 121.4450,
+    },
+    {
+        "store_id": "NT006",
+        "name": "OK超商 新莊中正店",
+        "chain": "OKMART",
+        "address": "新北市新莊區中正路300號",
+        "lat": 25.0369,
+        "lng": 121.4500,
+    },
+    {
+        "store_id": "NT007",
+        "name": "7-ELEVEN 汐止車站店",
+        "chain": "UNIMART",
+        "address": "新北市汐止區新台五路一段100號",
+        "lat": 25.0680,
+        "lng": 121.6620,
+    },
+    {
+        "store_id": "NT008",
+        "name": "全家 土城中央店",
+        "chain": "FAMI",
+        "address": "新北市土城區中央路二段150號",
+        "lat": 24.9730,
+        "lng": 121.4430,
+    },
+    {
+        "store_id": "NT009",
+        "name": "萊爾富 蘆洲長安店",
+        "chain": "HILIFE",
+        "address": "新北市蘆洲區長安街100號",
+        "lat": 25.0820,
+        "lng": 121.4590,
+    },
+    {
+        "store_id": "NT010",
+        "name": "OK超商 林口文化店",
+        "chain": "OKMART",
+        "address": "新北市林口區文化三路一段200號",
+        "lat": 25.0700,
+        "lng": 121.3620,
+    },
+])
+# ─────────────────────────────────────────────
+# 基隆市 10 間
+# ─────────────────────────────────────────────
+
+MOCK_STORES.extend([
+    {
+        "store_id": "KL001",
+        "name": "7-ELEVEN 基隆仁愛店",
+        "chain": "UNIMART",
+        "address": "基隆市仁愛區愛三路30號",
+        "lat": 25.1283,
+        "lng": 121.7419,
+    },
+    {
+        "store_id": "KL002",
+        "name": "7-ELEVEN 基隆火車站店",
+        "chain": "UNIMART",
+        "address": "基隆市仁愛區港西街5號",
+        "lat": 25.1330,
+        "lng": 121.7390,
+    },
+    {
+        "store_id": "KL003",
+        "name": "全家 基隆廟口店",
+        "chain": "FAMI",
+        "address": "基隆市仁愛區仁三路50號",
+        "lat": 25.1280,
+        "lng": 121.7440,
+    },
+    {
+        "store_id": "KL004",
+        "name": "全家 基隆信一路店",
+        "chain": "FAMI",
+        "address": "基隆市中正區信一路100號",
+        "lat": 25.1370,
+        "lng": 121.7480,
+    },
+    {
+        "store_id": "KL005",
+        "name": "萊爾富 基隆安樂店",
+        "chain": "HILIFE",
+        "address": "基隆市安樂區安樂路二段80號",
+        "lat": 25.1300,
+        "lng": 121.7200,
+    },
+    {
+        "store_id": "KL006",
+        "name": "OK超商 基隆中正店",
+        "chain": "OKMART",
+        "address": "基隆市中正區中正路200號",
+        "lat": 25.1470,
+        "lng": 121.7700,
+    },
+    {
+        "store_id": "KL007",
+        "name": "7-ELEVEN 七堵店",
+        "chain": "UNIMART",
+        "address": "基隆市七堵區明德一路100號",
+        "lat": 25.0950,
+        "lng": 121.7140,
+    },
+    {
+        "store_id": "KL008",
+        "name": "全家 暖暖店",
+        "chain": "FAMI",
+        "address": "基隆市暖暖區源遠路50號",
+        "lat": 25.0990,
+        "lng": 121.7360,
+    },
+    {
+        "store_id": "KL009",
+        "name": "萊爾富 八斗子店",
+        "chain": "HILIFE",
+        "address": "基隆市中正區北寧路200號",
+        "lat": 25.1450,
+        "lng": 121.7950,
+    },
+    {
+        "store_id": "KL010",
+        "name": "OK超商 基隆東明店",
+        "chain": "OKMART",
+        "address": "基隆市信義區東明路80號",
+        "lat": 25.1290,
+        "lng": 121.7580,
+    },
+])
 
 class ShopNotifyError(Exception):
 	"""
@@ -285,13 +705,17 @@ def confirm_store(request):
 			notify_payload["check_mac_value"] = generate_check_mac_value(
 				notify_payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV
 			)
-
+			notify_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/cod_store_confirmed/"
+			logger.info(f"[confirm_store] 準備通知商城,URL={notify_url}")  # 【新增】先印出實際要打的網址
+			
 			try:
 				response = httpx.post(
 					f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/cod_store_confirmed/",
 					json=notify_payload,
 					timeout=10,
 				)
+				# 【新增】不管成功與否,先把完整回應內容印出來
+				logger.info(f"[confirm_store] 商城回應: status={response.status_code}, body={response.text}")
 			except httpx.HTTPError as e:
 				# 連線失敗、逾時等 httpx 層級的例外,一律視為通知失敗,
 				# 拋出 ShopNotifyError 讓外層的 transaction.atomic() 據此 rollback
