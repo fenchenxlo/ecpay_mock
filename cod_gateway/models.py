@@ -27,6 +27,8 @@ class CODPaymentRequest(models.Model):
     trade_amt = models.DecimalField(max_digits=10, decimal_places=2)
     item_name = models.TextField()
     receiver_name = models.CharField(max_length=100)
+    receiver_address = models.CharField(max_length=255, blank=True, default="", verbose_name="收件地址", )
+
     receiver_cell_phone = models.CharField(max_length=20, blank=True, default="")
 
     LOGISTICS_SUBTYPE_CHOICES = [
