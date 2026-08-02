@@ -401,7 +401,7 @@ def ecpay_gateway_checkout(request):
             order_number=merchant_trade_no,
             defaults={
                 'user_id': payment_data["user_id"],
-                'receiver_name': "王大明",
+                'receiver_name': payment_data["receiver_name"] or "王大明",
                 'amount': payment_data["trade_amt"],
                 'status': payment_data["status"],
             }
