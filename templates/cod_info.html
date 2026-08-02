@@ -27,9 +27,19 @@
             <tr><td>訂單狀態</td><td>待出貨</td></tr>
         </table>
     </div>
-    <button class="btn" onclick="location.href='{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/'">
+	<script>
+		function goBack() {
+			if (history.length >= 2) {
+				history.go(-2);
+			} else {
+				history.go(-1);
+			}
+		}
+	</script>
+    <button class="btn" onclick="window.parent.location.href='{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/'">
         回商城
     </button>
+	<button type="button" onclick="goBack()"> 返回 </button>
 </div>
 </body>
 </html>

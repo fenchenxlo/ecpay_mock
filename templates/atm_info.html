@@ -94,16 +94,26 @@
         </table>
         
     </div>
-
+    <script>
+		function goBack() {
+			if (history.length >= 2) {
+				history.go(-2);
+			} else {
+				history.go(-1);
+			}
+		}
+	</script>
     <!-- 回商城 -->
-	<button type="button" onclick="history.back()">返回</button>
+	<button type="button" onclick="window.top.location.href='{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/'">返回商城</button>
+	<button type="button" onclick="goBack()"> 返回 </button>
+	<!-- <button type="button" onclick="history.back()">返回</button> 
     <button
         class="btn"
-        onclick="location.href='{{HF_SPACE_BANK_SITE_URL}}/commerce_shop/purchased_products/'">
+        onclick="location.href='{{HF_SPACE_E_COMMERCE_URL}}/commerce_shop/purchased_products/'">
 
         回商城
 
-    </button>
+    </button>-->
 
 </div>
 
