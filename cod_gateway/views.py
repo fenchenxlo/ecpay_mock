@@ -13,6 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 from gateway.models import Order  # 只 import 共用 model,不修改 gateway app 任何檔案
 from util.ChkMacVal import generate_check_mac_value
 from .models import CODPaymentRequest
+from django.utils import timezone  # 【新增】
 import logging			# 【新增】
 
 logger = logging.getLogger(__name__)   # 【新增】
@@ -805,128 +806,253 @@ def review_store(request):
 	}
 	return render(request, "review_store.html", context)
 
+@csrf_exempt
+def simulate_shipped(request, merchant_trade_no):
+    """
+    【新增】模擬:貨物已送達超商(demo 用,沒有真的物流串接,由人工按鈕觸發)。
+    只更新 CODPaymentRequest.status: cod_created → cod_shipped。
+    這一步不需要通知商城(商城端目前只在乎「待處理」vs「已付款」,不細分配送中),
+    純粹是讓 cod_gateway 這邊的狀態機走完整個流程,方便你之後想在商城端顯示
+    更細的物流狀態時,資料已經現成可以接上。
+    """
+    if request.method != "POST":
+        return HttpResponse("method error", status=405)
+
+    try:
+        cod_payment = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
+    except CODPaymentRequest.DoesNotExist as e:
+        return _log_and_build_error_response("simulate_shipped.not_found", e, status=404)
+    except Exception as e:
+        return _log_and_build_error_response("simulate_shipped.db_read_unexpected", e, status=500)
+
+    # 防呆:只有「待出貨」狀態才能模擬出貨,避免重複點擊/瀏覽器返回上一頁重送
+    # 造成狀態被錯誤地從 cod_paid 又打回 cod_shipped
+    if cod_payment.status != "cod_created":
+        logger.warning(
+            f"[simulate_shipped] 訂單 {merchant_trade_no} 目前狀態是 "
+            f"{cod_payment.status},不是 cod_created,略過這次模擬,直接顯示現況"
+        )
+        context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
+        return render(request, "cod_info.html", context)
+
+    try:
+        cod_payment.status = "cod_shipped"
+        cod_payment.shipped_at = timezone.now()
+        cod_payment.save()
+    except Exception as e:
+        return _log_and_build_error_response("simulate_shipped.db_write", e, status=500)
+
+    logger.info(f"[simulate_shipped] 訂單 {merchant_trade_no} 已模擬「貨已送達超商」")
+    context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
+    return render(request, "cod_info.html", context)
+
 
 @csrf_exempt
-def confirm_store(request):
-	"""
-	使用者在確認頁按下「確認送出」後,真正把門市資訊寫進 CODPaymentRequest,
-	並用 httpx 通知商城(E_commerce)這筆訂單已確認超商取貨付款。
+def simulate_cod_paid(request, merchant_trade_no):
+    """
+    【新增】模擬:顧客到店取貨並付現(demo 用,人工按鈕觸發,取代真實物流/收銀系統通知)。
+    做兩件事,包在同一個 transaction.atomic() 裡,確保一致性(跟 confirm_store 同一套設計):
+    1. 更新 CODPaymentRequest.status → cod_paid
+    2. httpx 通知商城(E_commerce)「這筆 COD 訂單已完成付款」
+       只要通知商城失敗(連線失敗或商城回應非 200),整個 rollback,
+       不會出現「cod_gateway 覺得已付款,商城卻不知道」的資料不一致。
+    """
+    if request.method != "POST":
+        return HttpResponse("method error", status=405)
 
-	【修改】原本「通知商城失敗只印錯誤、不影響使用者看到確認頁」的邏輯是錯的——
-	這樣會讓 ecpay_mock 和 E_commerce 兩邊資料不一致。改成:
-	門市寫入 + 通知商城 一起包進同一個 transaction.atomic(),
-	只要通知商城失敗(連線錯誤,或商城回應非 200),就拋出 ShopNotifyError,
-	讓這次的門市寫入也跟著 rollback,並回應清楚的錯誤頁面,
-	附上返回商店訂單頁面的按鈕,讓使用者可以重新操作。
-	"""
-	if request.method != "POST":
-		return HttpResponse("method error", status=405)
+    try:
+        cod_payment = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
+    except CODPaymentRequest.DoesNotExist as e:
+        return _log_and_build_error_response("simulate_cod_paid.not_found", e, status=404)
+    except Exception as e:
+        return _log_and_build_error_response("simulate_cod_paid.db_read_unexpected", e, status=500)
 
-	try:
-		merchant_trade_no = request.session.get("cod_merchant_trade_no")
-		if not merchant_trade_no:
-			raise ValueError("session 已遺失,找不到對應訂單,請重新從商城結帳")
+    # 冪等處理:已經付款完成的訂單,重複點擊直接顯示既有結果,不當錯誤處理
+    if cod_payment.status == "cod_paid":
+        logger.info(f"[simulate_cod_paid] 訂單 {merchant_trade_no} 已經是付款完成狀態,直接顯示既有結果")
+        context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
+        return render(request, "cod_info.html", context)
 
-		store_id = request.POST.get("store_id")
-		store = next((s for s in MOCK_STORES if s["store_id"] == store_id), None)
-		if not store:
-			raise ValueError(f"門市代號 '{store_id}' 不存在,請重新選擇")
+    # 防呆:必須先出貨才能模擬取貨付款,避免狀態機跳步
+    if cod_payment.status != "cod_shipped":
+        logger.warning(
+            f"[simulate_cod_paid] 訂單 {merchant_trade_no} 目前狀態是 "
+            f"{cod_payment.status},尚未出貨,無法模擬取貨付款"
+        )
+        return render(request, "cod_error.html", {
+            "error_message": "這筆訂單尚未出貨,請先模擬「貨已送達超商」。",
+            "merchant_trade_no": merchant_trade_no,
+            "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
+        }, status=400)
 
-	except ValueError as e:
-		return _log_and_build_error_response("confirm_store.validate_input", e, status=400)
-	except Exception as e:
-		return _log_and_build_error_response("confirm_store.validate_input_unexpected", e, status=500)
+    try:
+        with transaction.atomic():
+            cod_payment.status = "cod_paid"
+            cod_payment.paid_at = timezone.now()
+            cod_payment.save()
 
-	try:
-		cod_payment = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
-	except CODPaymentRequest.DoesNotExist as e:
-		return _log_and_build_error_response("confirm_store.cod_payment_not_found", e, status=404)
-	except Exception as e:
-		return _log_and_build_error_response("confirm_store.db_read_unexpected", e, status=500)
+            notify_payload = {
+                "merchant_trade_no": cod_payment.merchant_trade_no,
+                "trade_amt": str(cod_payment.trade_amt),
+                "transaction_id": str(uuid.uuid4()),
+            }
+            notify_payload["check_mac_value"] = generate_check_mac_value(
+                notify_payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV
+            )
+            notify_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/cod_payment_confirmed/"
+            logger.info(f"[simulate_cod_paid] 準備通知商城,URL={notify_url}")
 
-	# 防止同一筆訂單被重複確認門市(連點兩次、瀏覽器返回上一頁重送)——這段不變動
-	if cod_payment.store_id:
-		logger.info(f"[confirm_store] 訂單 {merchant_trade_no} 已確認過門市,直接顯示既有結果")
-		try:
-			del request.session["cod_merchant_trade_no"]
-		except KeyError:
-			pass
-		context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
-		return render(request, "cod_info.html", context)
+            try:
+                response = httpx.post(notify_url, json=notify_payload, timeout=10)
+                logger.info(f"[simulate_cod_paid] 商城回應: status={response.status_code}, body={response.text}")
+            except httpx.HTTPError as e:
+                raise ShopNotifyError(f"連線商城失敗: {type(e).__name__}: {e}") from e
 
-	# ── 【修改】門市寫入 + 通知商城,包進同一個 transaction.atomic() ──────
-	# 只要通知商城失敗,整個區塊(包含 cod_payment.save())都會自動 rollback,
-	# 不會留下「ecpay_mock 已確認,商城不知道」的不一致狀態。
-	try:
-		with transaction.atomic():
-			cod_payment.logistics_subtype = store["chain"]
-			cod_payment.store_id = store["store_id"]
-			cod_payment.store_name = store["name"]
-			cod_payment.store_address = store["address"]
-			cod_payment.store_lat = store["lat"]
-			cod_payment.store_lng = store["lng"]
-			cod_payment.save()
+            if response.status_code != 200:
+                raise ShopNotifyError(
+                    f"商城回應非 200: status={response.status_code}, body={response.text}"
+                )
 
-			notify_payload = {
-				"merchant_trade_no": cod_payment.merchant_trade_no,
-				"store_name": cod_payment.store_name,
-				"store_address": cod_payment.store_address,
-				"logistics_subtype": cod_payment.logistics_subtype,
-			}
-			notify_payload["check_mac_value"] = generate_check_mac_value(
-				notify_payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV
-			)
+    except ShopNotifyError as e:
+        logger.exception(f"[simulate_cod_paid.notify_shop_failed] 訂單 {merchant_trade_no} 通知商城失敗")
+        return render(request, "cod_error.html", {
+            "error_message": "通知商城付款結果失敗,請稍後再試一次「模擬取貨付款」。",
+            "merchant_trade_no": merchant_trade_no,
+            "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
+        }, status=502)
+    except Exception as e:
+        logger.exception(f"[simulate_cod_paid.db_write_unexpected] 訂單 {merchant_trade_no} 寫入失敗")
+        return render(request, "cod_error.html", {
+            "error_message": "系統發生錯誤,模擬付款失敗,請稍後再試。",
+            "merchant_trade_no": merchant_trade_no,
+            "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
+        }, status=500)
 
-			try:
-				response = httpx.post(
-					f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/cod_store_confirmed/",
-					json=notify_payload,
-					timeout=10,
-				)
-			except httpx.HTTPError as e:
-				# 連線失敗、逾時等 httpx 層級的例外,一律視為通知失敗,
-				# 拋出 ShopNotifyError 讓外層的 transaction.atomic() 據此 rollback
-				raise ShopNotifyError(f"連線商城失敗: {type(e).__name__}: {e}") from e
+    logger.info(f"[simulate_cod_paid] 訂單 {merchant_trade_no} 已模擬「顧客取貨付款」完成")
+    context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
+    return render(request, "cod_info.html", context)
 
-			if response.status_code != 200:
-				# 商城收到請求但處理失敗(例如商城那邊找不到訂單、簽章不符、DB 寫入錯誤),
-				# 一樣視為通知失敗,把商城回傳內容原封不動記下來方便除錯
-				raise ShopNotifyError(
-					f"商城回應非 200: status={response.status_code}, body={response.text}"
-				)
+# @csrf_exempt
+# def confirm_store(request):
+	# """
+	# 使用者在確認頁按下「確認送出」後,真正把門市資訊寫進 CODPaymentRequest,
+	# 並用 httpx 通知商城(E_commerce)這筆訂單已確認超商取貨付款。
 
-	except ShopNotifyError as e:
-		# 【新增】通知商城失敗,transaction.atomic() 已經自動把 cod_payment.save()
-		# 一併 rollback,這裡只需要記錄錯誤、回應清楚的錯誤頁面給使用者
-		logger.exception(f"[confirm_store.notify_shop_failed] 訂單 {merchant_trade_no} 通知商城失敗")
-		return render(
-			request,
-			"cod_error.html",
-			{
-				"error_message": "通知商城失敗,您選擇的門市尚未確認成功,請返回商店訂單頁面重新操作。",
-				"merchant_trade_no": merchant_trade_no,
-				"HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
-			},
-			status=502,	 # 502 Bad Gateway:代表上游(商城)服務通知失敗
-		)
-	except Exception as e:
-		# 保底:寫入 DB 階段本身出現非預期例外(跟通知商城無關),一樣要 rollback + 記錄
-		logger.exception(f"[confirm_store.db_write_unexpected] 訂單 {merchant_trade_no} 寫入失敗")
-		return render(
-			request,
-			"cod_error.html",
-			{
-				"error_message": "系統發生錯誤,門市確認失敗,請返回商店訂單頁面重新操作。",
-				"merchant_trade_no": merchant_trade_no,
-				"HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
-			},
-			status=500,
-		)
+	# 【修改】原本「通知商城失敗只印錯誤、不影響使用者看到確認頁」的邏輯是錯的——
+	# 這樣會讓 ecpay_mock 和 E_commerce 兩邊資料不一致。改成:
+	# 門市寫入 + 通知商城 一起包進同一個 transaction.atomic(),
+	# 只要通知商城失敗(連線錯誤,或商城回應非 200),就拋出 ShopNotifyError,
+	# 讓這次的門市寫入也跟著 rollback,並回應清楚的錯誤頁面,
+	# 附上返回商店訂單頁面的按鈕,讓使用者可以重新操作。
+	# """
+	# if request.method != "POST":
+		# return HttpResponse("method error", status=405)
 
-	try:
-		del request.session["cod_merchant_trade_no"]
-	except KeyError:
-		pass
+	# try:
+		# merchant_trade_no = request.session.get("cod_merchant_trade_no")
+		# if not merchant_trade_no:
+			# raise ValueError("session 已遺失,找不到對應訂單,請重新從商城結帳")
 
-	context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
-	return render(request, "cod_info.html", context)
+		# store_id = request.POST.get("store_id")
+		# store = next((s for s in MOCK_STORES if s["store_id"] == store_id), None)
+		# if not store:
+			# raise ValueError(f"門市代號 '{store_id}' 不存在,請重新選擇")
+
+	# except ValueError as e:
+		# return _log_and_build_error_response("confirm_store.validate_input", e, status=400)
+	# except Exception as e:
+		# return _log_and_build_error_response("confirm_store.validate_input_unexpected", e, status=500)
+
+	# try:
+		# cod_payment = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
+	# except CODPaymentRequest.DoesNotExist as e:
+		# return _log_and_build_error_response("confirm_store.cod_payment_not_found", e, status=404)
+	# except Exception as e:
+		# return _log_and_build_error_response("confirm_store.db_read_unexpected", e, status=500)
+
+	# # 防止同一筆訂單被重複確認門市(連點兩次、瀏覽器返回上一頁重送)——這段不變動
+	# if cod_payment.store_id:
+		# logger.info(f"[confirm_store] 訂單 {merchant_trade_no} 已確認過門市,直接顯示既有結果")
+		# try:
+			# del request.session["cod_merchant_trade_no"]
+		# except KeyError:
+			# pass
+		# context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
+		# return render(request, "cod_info.html", context)
+
+	# # ── 【修改】門市寫入 + 通知商城,包進同一個 transaction.atomic() ──────
+	# # 只要通知商城失敗,整個區塊(包含 cod_payment.save())都會自動 rollback,
+	# # 不會留下「ecpay_mock 已確認,商城不知道」的不一致狀態。
+	# try:
+		# with transaction.atomic():
+			# cod_payment.logistics_subtype = store["chain"]
+			# cod_payment.store_id = store["store_id"]
+			# cod_payment.store_name = store["name"]
+			# cod_payment.store_address = store["address"]
+			# cod_payment.store_lat = store["lat"]
+			# cod_payment.store_lng = store["lng"]
+			# cod_payment.save()
+
+			# notify_payload = {
+				# "merchant_trade_no": cod_payment.merchant_trade_no,
+				# "store_name": cod_payment.store_name,
+				# "store_address": cod_payment.store_address,
+				# "logistics_subtype": cod_payment.logistics_subtype,
+			# }
+			# notify_payload["check_mac_value"] = generate_check_mac_value(
+				# notify_payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV
+			# )
+
+			# try:
+				# response = httpx.post(
+					# f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/cod_store_confirmed/",
+					# json=notify_payload,
+					# timeout=10,
+				# )
+			# except httpx.HTTPError as e:
+				# # 連線失敗、逾時等 httpx 層級的例外,一律視為通知失敗,
+				# # 拋出 ShopNotifyError 讓外層的 transaction.atomic() 據此 rollback
+				# raise ShopNotifyError(f"連線商城失敗: {type(e).__name__}: {e}") from e
+
+			# if response.status_code != 200:
+				# # 商城收到請求但處理失敗(例如商城那邊找不到訂單、簽章不符、DB 寫入錯誤),
+				# # 一樣視為通知失敗,把商城回傳內容原封不動記下來方便除錯
+				# raise ShopNotifyError(
+					# f"商城回應非 200: status={response.status_code}, body={response.text}"
+				# )
+
+	# except ShopNotifyError as e:
+		# # 【新增】通知商城失敗,transaction.atomic() 已經自動把 cod_payment.save()
+		# # 一併 rollback,這裡只需要記錄錯誤、回應清楚的錯誤頁面給使用者
+		# logger.exception(f"[confirm_store.notify_shop_failed] 訂單 {merchant_trade_no} 通知商城失敗")
+		# return render(
+			# request,
+			# "cod_error.html",
+			# {
+				# "error_message": "通知商城失敗,您選擇的門市尚未確認成功,請返回商店訂單頁面重新操作。",
+				# "merchant_trade_no": merchant_trade_no,
+				# "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
+			# },
+			# status=502,	 # 502 Bad Gateway:代表上游(商城)服務通知失敗
+		# )
+	# except Exception as e:
+		# # 保底:寫入 DB 階段本身出現非預期例外(跟通知商城無關),一樣要 rollback + 記錄
+		# logger.exception(f"[confirm_store.db_write_unexpected] 訂單 {merchant_trade_no} 寫入失敗")
+		# return render(
+			# request,
+			# "cod_error.html",
+			# {
+				# "error_message": "系統發生錯誤,門市確認失敗,請返回商店訂單頁面重新操作。",
+				# "merchant_trade_no": merchant_trade_no,
+				# "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
+			# },
+			# status=500,
+		# )
+
+	# try:
+		# del request.session["cod_merchant_trade_no"]
+	# except KeyError:
+		# pass
+
+	# context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
+	# return render(request, "cod_info.html", context)

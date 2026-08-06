@@ -52,9 +52,13 @@ class CODPaymentRequest(models.Model):
         max_length=20,
         choices=[
             ("cod_created", "待出貨"),
+            ("cod_shipped", "配送中,待取貨付款"),   # 【新增】
+            ("cod_paid", "已取貨付款"),             # 【新增】
         ],
         default="cod_created",
     )
+    shipped_at = models.DateTimeField(null=True, blank=True)  # 【新增】
+    paid_at = models.DateTimeField(null=True, blank=True)     # 【新增】
 
     check_mac_value = models.CharField(max_length=128, blank=True, null=True)
     return_url = models.URLField(blank=True, null=True)

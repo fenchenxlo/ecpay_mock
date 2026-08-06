@@ -24,7 +24,8 @@
             <tr><td>取貨門市</td><td>{{ cod.store_name }}</td></tr>
             <tr><td>門市地址</td><td>{{ cod.store_address }}</td></tr>
             <tr><td>收件人</td><td>{{ cod.receiver_name }}</td></tr>
-            <tr><td>訂單狀態</td><td>待出貨</td></tr>
+            <!-- <tr><td>訂單狀態</td><td>待出貨</td></tr> -->
+            <tr><td>訂單狀態</td><td>{{ cod.get_status_display }}</td></tr>  <!-- 【修改】原本寫死「待出貨」,改成動態顯示 -->
         </table>
     </div>
     <script>
@@ -35,12 +36,26 @@
                    history.go(-1);
             }
         }*/
-	</script>
+    </script>
+	{% if cod.status == 'cod_created' %}
+    <form method="post" action="{% url 'simulate_shipped' cod.merchant_trade_no %}" style="display:inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn">模擬:貨已送達超商</button>
+    </form>
+	{% elif cod.status == 'cod_shipped' %}
+		<form method="post" action="{% url 'simulate_cod_paid' cod.merchant_trade_no %}" style="display:inline;">
+			{% csrf_token %}
+			<button type="submit" class="btn">模擬:顧客取貨付款</button>
+		</form>
+	{% elif cod.status == 'cod_paid' %}
+		<p style="color:green; font-weight:bold;">✅ 已完成取貨付款</p>
+	{% endif %}
+	
     <button class="btn" onclick="window.parent.location.href='{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/'">
         回商城
     </button>
 	<!-- <button type="button" onclick="goBack()"> 返回 </button> -->
-	<button type="button" onclick="history.back()">返回</button>
+    <button type="button" onclick="history.back()">返回</button>
 </div>
 </body>
 </html>
