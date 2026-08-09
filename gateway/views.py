@@ -151,6 +151,7 @@ def notify_bank(payment_data):
 #         "expire_date": payment_request.expire_date.strftime("%Y-%m-%d %H:%M:%S"),
 #         "status": payment_request.status,
     }
+	logger.info(f"expire_date: {(datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")}")
     print(payload["expire_date"])
 
     
@@ -169,9 +170,11 @@ def notify_bank(payment_data):
             timeout=10
         )
         
+        logger.info(f"status_code = {response.status_code}" )
         print("status_code =", response.status_code)
         print("response.text =", response.text)
-        
+        logger.info(f"response.text = {response.text}" )
+		
         if response.status_code != 200:
             return {
                 "status": False
@@ -185,7 +188,8 @@ def notify_bank(payment_data):
 
         print("銀行通知失敗")
         print(ex)
-        
+        logger.info(f"Exception ex: {ex}" )
+
         return {
             "status": False,
             "message": str(ex)
@@ -377,11 +381,16 @@ def ecpay_gateway_checkout(request):
     
     payment_data["check_mac_value"] = received_mac
     payment_data["status"] = "atm_created"
-    res_status = notify_bank(payment_data)
-    print("res_status =", res_status)
-    print(type(res_status))
-        
-    if res_status["status"] == False:
+    # 通知銀行建立虛擬帳號
+    bank_result = notify_bank(payment_data)
+
+    print("bank_result =", bank_result)
+    print("type =", type(bank_result))
+
+    logger.info(f"bank_result = {bank_result}")
+    logger.info(f"type = {type(bank_result)}")  
+    
+    if bank_result["status"] == False:
         error_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/"
 #        print("redirect to error_url =", error_url)   # 先加這行確認實際值
         return redirect(error_url)        
@@ -394,7 +403,10 @@ def ecpay_gateway_checkout(request):
 #                 "銀行通知失敗: VirtualAccount取得或建立失敗",
 #                 status=400
 #             )
-    
+    bank_code = bank_result["bank_code"]
+    v_account = bank_result["v_account"]
+    expire_date = bank_result["expire_date"]
+
     with transaction.atomic():
         
         order_obj, create = Order.objects.get_or_create(
@@ -424,21 +436,36 @@ def ecpay_gateway_checkout(request):
                 'payment_info_url': payment_data.get("PaymentInfoUrl", f"{settings.HF_SPACE_ECPAY_MOCK_URL}/gateway/payment_info/"),
                 'order_result_url': payment_data.get("OrderResultURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_ok/"),
                 'check_mac_value': received_mac,
-                'bank_code': "013", # 國泰世華銀行代碼
-                'v_account': f"013{random.randint(100000000000,999999999999)}", # 虛擬帳戶
-                'expire_date': (datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S"),
+                'bank_code': bank_code, # 國泰世華銀行代碼
+                'v_account': v_account, # 虛擬帳戶
+                'expire_date': expire_date,
             }
         )
-        
-    bank_code = payment_request.bank_code
-    v_account = payment_request.v_account
-    expire_date = payment_request.expire_date
     
-    if bank_code == None and v_account == None:
-        # 產生 ATM 虛擬帳號
-        bank_code = payment_request.bank_code = bank_code = "013"  # 國泰世華
-        v_account = payment_request.v_account = f"{bank_code}{random.randint(100000000000,999999999999)}"
-        expire_date = payment_request.expire_date = (datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
+    # ==========================================
+    # ③ 通知 ecommerce_shop
+    # ==========================================
+
+    shop_result = notify_shop(bank_result)
+
+    logger.info(f"shop_result = {shop_result}")
+
+    if not shop_result.get("status"):
+            error_url = (
+            f"{settings.HF_SPACE_E_COMMERCE_URL}"
+            f"/commerce_shop/payment_error/"
+        )
+
+    return redirect(error_url)
+    # bank_code = payment_request.bank_code
+    # v_account = payment_request.v_account
+    # expire_date = payment_request.expire_date
+    
+    # if bank_code == None and v_account == None:
+        # # 產生 ATM 虛擬帳號
+        # bank_code = payment_request.bank_code = bank_code = "013"  # 國泰世華
+        # v_account = payment_request.v_account = f"{bank_code}{random.randint(100000000000,999999999999)}"
+        # expire_date = payment_request.expire_date = (datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
 
 #     print("bank_code:", bank_code)
 #     print("v_account:", v_account)
@@ -472,9 +499,62 @@ def ecpay_gateway_checkout(request):
         "content_js_json": json.dumps(content_js, ensure_ascii=False, default=str),  # JSON 字串，給 JS 用
         "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL
     }
-    
+    logger.info(f"content: {content}")
     return render(request, "atm_info.html", content)
 
+
+def notify_shop(bank_result):
+    """
+    銀行建立 ATM 虛擬帳號後，
+    通知 ecommerce_shop 寫入 Payment。
+    """
+
+    payload = {
+        "merchant_trade_no": bank_result["merchant_trade_no"],
+        "bank_code": bank_result["bank_code"],
+        "v_account": bank_result["v_account"],
+        "expire_date": bank_result["expire_date"],
+        "trade_amt": bank_result.get("trade_amt"),
+        "payment_method": "ATM",
+        "status": "atm_created",
+    }
+
+    payload["CheckMacValue"] = generate_check_mac_value(
+        payload,
+        settings.ECPAY_HASH_KEY,
+        settings.ECPAY_HASH_IV
+    )
+
+    try:
+        response = httpx.post(
+            f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/atm_payment_notify/",
+            json=payload,
+            timeout=10
+        )
+
+        logger.info(
+            f"notify_shop status_code = {response.status_code}"
+        )
+
+        logger.info(
+            f"notify_shop response = {response.text}"
+        )
+
+        if response.status_code != 200:
+            return {
+                "status": False,
+                "message": "商城 ATM Payment 寫入失敗"
+            }
+
+        return response.json()
+
+    except Exception as ex:
+        logger.exception("通知商城 ATM Payment 失敗")
+
+        return {
+            "status": False,
+            "message": str(ex)
+        }
 
 @csrf_exempt
 @transaction.atomic
