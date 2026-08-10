@@ -170,10 +170,10 @@ def notify_bank(payment_data):
             timeout=10
         )
         
-        logger.info(f"status_code = {response.status_code}" )
+        logger.info(f"ecpay_mock: status_code = {response.status_code}" )
         print("status_code =", response.status_code)
         print("response.text =", response.text)
-        logger.info(f"response.text = {response.text}" )
+        logger.info(f"ecpay_mock: response.text = {response.text}" )
 		
         if response.status_code != 200:
             return {
@@ -181,14 +181,21 @@ def notify_bank(payment_data):
             }
 
         print("1")
-        
-        return response.json()
+        return JsonResponse({ "status":True,
+            "merchant_trade_no": response.merchant_trade_no,
+            "bank_code": response.bank_code,
+            "v_account": response.v_account,
+            "expire_date": response.expire_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "trade_amt": str(response.trade_amt),
+            "payment_status": response.status
+        })
+#        return response.json()
 
     except Exception as ex:
 
         print("銀行通知失敗")
         print(ex)
-        logger.info(f"Exception ex: {ex}" )
+        logger.info(f"ecpay_mock: Exception ex: {ex}" )
 
         return {
             "status": False,
