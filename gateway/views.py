@@ -177,17 +177,20 @@ def notify_bank(payment_data):
 		
         if response.status_code != 200:
             return {
-                "status": False
+                "status": False,
+                "message": "銀行建立虛擬帳號失敗",
+                "status_code": response.status_code,
             }
-
+        data = response.json()
         print("1")
-        return JsonResponse({ "status":True,
-            "merchant_trade_no": response.merchant_trade_no,
-            "bank_code": response.bank_code,
-            "v_account": response.v_account,
-            "expire_date": response.expire_date.strftime("%Y-%m-%d %H:%M:%S"),
-            "trade_amt": str(response.trade_amt),
-            "payment_status": response.status
+        return JsonResponse({
+            "status": True,
+            "merchant_trade_no": data["merchant_trade_no"],
+            "bank_code": data["bank_code"],
+            "v_account": data["v_account"],
+            "expire_date": data["expire_date"],
+            "trade_amt": data["trade_amt"],
+            "payment_status": data["payment_status"],
         })
 #        return response.json()
 
@@ -203,7 +206,13 @@ def notify_bank(payment_data):
         }
     
     return JsonResponse({
-            "status":True
+        "status": True,
+        "merchant_trade_no": data["merchant_trade_no"],
+        "bank_code": data["bank_code"],
+        "v_account": data["v_account"],
+        "expire_date": data["expire_date"],
+        "trade_amt": data["trade_amt"],
+        "payment_status": data["payment_status"],
     })
 
 
