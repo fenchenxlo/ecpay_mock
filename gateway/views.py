@@ -172,8 +172,8 @@ def notify_bank(payment_data):
         
         logger.info(f"ecpay_mock: status_code = {response.status_code}" )
         print("status_code =", response.status_code)
-        print("response.text =", response.text)
-        logger.info(f"ecpay_mock: response.text = {response.text}" )
+        print("response.json =", response.json)
+        logger.info(f"ecpay_mock: response.json = {response.json}" )
 		
         if response.status_code != 200:
             return {
