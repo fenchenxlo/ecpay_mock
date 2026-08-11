@@ -398,8 +398,11 @@ def ecpay_gateway_checkout(request):
     payment_data["check_mac_value"] = received_mac
     payment_data["status"] = "atm_created"
     # 通知銀行建立虛擬帳號
-    bank_result = notify_bank(payment_data)
+#    bank_result = notify_bank(payment_data)
+    
+    bank_response = notify_bank(payment_data)
 
+    bank_result = json.loads(bank_response.content)
     print("bank_result =", bank_result)
     print("type =", type(bank_result))
 
