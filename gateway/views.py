@@ -458,6 +458,7 @@ def ecpay_gateway_checkout(request):
                 'bank_code': bank_code, # 國泰世華銀行代碼
                 'v_account': v_account, # 虛擬帳戶
                 'expire_date': expire_date,
+                'response_data': bank_result,
             }
         )
     
@@ -506,6 +507,7 @@ def ecpay_gateway_checkout(request):
         'v_account': v_account,
         'expire_date': expire_date,
         'status': "atm_created",
+		'response_data': shop_result,
     }
     content_js["check_mac_value"] = generate_check_mac_value(content_js,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
     
@@ -535,6 +537,7 @@ def notify_shop(bank_result):
         "trade_amt": bank_result.get("trade_amt"),
         "payment_method": "ATM",
         "status": "atm_created",
+		"response_data": bank_result,
     }
 
     payload["CheckMacValue"] = generate_check_mac_value(
