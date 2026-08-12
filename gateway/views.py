@@ -396,7 +396,7 @@ def ecpay_gateway_checkout(request):
     print("merchant_trade_no: ",merchant_trade_no)
     
     payment_data["check_mac_value"] = received_mac
-    payment_data["status"] = "atm_created"
+#    payment_data["status"] = "atm_created"
     # 通知銀行建立虛擬帳號
 #    bank_result = notify_bank(payment_data)
     
@@ -475,7 +475,7 @@ def ecpay_gateway_checkout(request):
             f"/commerce_shop/payment_error/"
         )
 
-    return redirect(error_url)
+        return redirect(error_url)
     # bank_code = payment_request.bank_code
     # v_account = payment_request.v_account
     # expire_date = payment_request.expire_date
