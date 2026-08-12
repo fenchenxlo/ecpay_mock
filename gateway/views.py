@@ -410,9 +410,9 @@ def ecpay_gateway_checkout(request):
     logger.info(f"type = {type(bank_result)}")  
     
     if bank_result["status"] == False:
-       error_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/"
+        error_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/"
 #        print("redirect to error_url =", error_url)   # 先加這行確認實際值
-       return redirect(error_url)        
+        return redirect(error_url)        
 #             return redirect(f'{HF_SPACE_E_COMMERCE_UR}/commerce_shop/purchased_products/')
 #             return JsonResponse({
 #                 "tags":"error",
@@ -470,11 +470,10 @@ def ecpay_gateway_checkout(request):
     logger.info(f"shop_result = {shop_result}")
 
     if not shop_result.get("status"):
-            error_url = (
+        error_url = (
             f"{settings.HF_SPACE_E_COMMERCE_URL}"
             f"/commerce_shop/payment_error/"
         )
-
         return redirect(error_url)
     # bank_code = payment_request.bank_code
     # v_account = payment_request.v_account
