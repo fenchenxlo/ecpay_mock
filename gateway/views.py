@@ -458,7 +458,7 @@ def ecpay_gateway_checkout(request):
                 'bank_code': bank_code, # 國泰世華銀行代碼
                 'v_account': v_account, # 虛擬帳戶
                 'expire_date': expire_date,
-                'response_data': bank_result,
+#                'response_data': bank_result,
             }
         )
     
