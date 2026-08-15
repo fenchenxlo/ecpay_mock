@@ -27,9 +27,9 @@ def notify_shop_paid(payload):
 
         timeout=10
     )
-    logger.info("SHOP URL:", settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_callback/)
-    logger.info("SHOP STATUS:", response.status_code)
-    logger.info("SHOP RESPONSE:", response.text)
+    logger.info("SHOP NOTIFY URL: %s", settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_callback/)
+    logger.info("STATUSL: %s", response.status_code)    
+    logger.info("SHOP RESPONSE: %s", response.text)
     return response
 
 ## notify_shop_failed
@@ -55,8 +55,8 @@ def notify_shop_failed(payload):
         timeout=10
     )
 
-    logger.info("SHOP URL:", settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_callback/)
-    logger.info("SHOP STATUS:", response.status_code)
-    logger.info("SHOP RESPONSE:", response.text)
+    logger.info("SHOP NOTIFY URL: %s", settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_callback/)
+    logger.info("STATUSL: %s", response.status_code)    
+    logger.info("SHOP RESPONSE: %s", response.text)
     return response
 
