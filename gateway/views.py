@@ -324,7 +324,8 @@ def payment_notify(request):
                 return JsonResponse({"status": "success"})
             else:
                 return JsonResponse({"status": "failed"})
-        except Exception:
+        except Exception as e:
+            logger.exception(f"[Exception]-notify_shop_paid : {e} ")
             return JsonResponse({"status": "failed", "message": "Shop notification failed"}, status=502)
 # 付款失敗
     else:
