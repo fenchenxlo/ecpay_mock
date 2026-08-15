@@ -236,11 +236,11 @@ def payment_notify(request):
     recv_mac = data.pop("CheckMacValue", None)
     if not recv_mac:
         return JsonResponse({"status": "error", "message": "Missing CheckMacValue"}, status=400)
-    logger.info(f"recv_mac={recv_mac}")
+    #logger.info(f"recv_mac={recv_mac}")
     local_mac = (
         generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
     )
-    logger.info(f"local_mac={local_mac}")
+    #logger.info(f"local_mac={local_mac}")
     if recv_mac != local_mac:
 
         return JsonResponse({
