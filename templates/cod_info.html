@@ -50,12 +50,15 @@
 	{% elif cod.status == 'cod_paid' %}
 		<p style="color:green; font-weight:bold;">✅ 已完成取貨付款</p>
 	{% endif %}
-	
-    <button class="btn" onclick="window.parent.location.href='{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/'">
+	<!-- 回商店訂單頁修改付款方式 -->
+	<a href="https://{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/">
+		返回商品頁
+	</a>
+    <!-- <button class="btn" onclick="window.parent.location.href='{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/'">
         回商城
-    </button>
+    </button> -->
 	<!-- <button type="button" onclick="goBack()"> 返回 </button> -->
-    <button type="button" onclick="history.back()">返回</button>
+    <!-- <button type="button" onclick="history.back()">返回</button> -->
 </div>
 </body>
 </html>
