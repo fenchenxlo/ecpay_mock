@@ -16,6 +16,8 @@ from .services import notify_shop_paid, notify_shop_failed
 from django.contrib.auth.decorators import user_passes_test
 from django.shortcuts import render
 from django.db import connection
+### 新增修改：引入 Django 的資料庫找不到資料異常，防止 500 錯誤 ###
+from django.core.exceptions import ObjectDoesNotExist
 import logging          # 【新增】
 
 logger = logging.getLogger(__name__)   # 【新增】
@@ -222,11 +224,18 @@ def notify_bank(payment_data):
 @transaction.atomic
 def payment_notify(request):
 
-    data = json.loads(request.body)
+### 新增修改：加入 try-except 機制，防止 request.body 不是合法 JSON 時引發崩潰 ###
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
+		
     print("data: ",data)
-    recv_mac = data.pop(
-        "CheckMacValue"
-    )
+
+### 新增修改：改用 .pop(key, default) 方式取值。若對方沒傳 CheckMacValue，會拿到 None 而不是直接噴 500 KeyError ###
+    recv_mac = data.pop("CheckMacValue", None)
+    if not recv_mac:
+        return JsonResponse({"status": "error", "message": "Missing CheckMacValue"}, status=400)
 
     local_mac = (
         generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
@@ -241,19 +250,28 @@ def payment_notify(request):
             "message":"CheckMacValue Error"
 
         }, status=400)
-    
-    order = (
-        Order.objects.get(
-            order_number=
-            data["merchant_trade_no"]
+
+    ### 新增修改：檢查 data 內是否缺少後續邏輯必填的鍵值，防止後面 data["key"] 噴 KeyError ###
+    required_keys = ["merchant_trade_no", "trade_amt", "bank_code", "v_account", "expire_date", "status"]
+    if not all(key in data for key in required_keys):
+        return JsonResponse({"status": "error", "message": "Missing required fields"}, status=400)
+		
+### 新增修改：包裹 try-except。當資料庫找不到該訂單或付款請求時，回傳 404，而不是直接系統崩潰噴 500 ###
+    try:
+        order = (
+            Order.objects.get(
+                order_number=
+                data["merchant_trade_no"]
+            )
         )
-    )
-    payment = (
-        PaymentRequest.objects.get(
-            merchant_trade_no=
-            data["merchant_trade_no"]
+        payment = (
+            PaymentRequest.objects.get(
+                merchant_trade_no=
+                data["merchant_trade_no"]
+            )
         )
-    )
+    except ObjectDoesNotExist:
+        return JsonResponse({"status": "error", "message": "Order or Payment record not found"}, status=404)
     
     payload = {
         "merchant_trade_no": data["merchant_trade_no"],
@@ -264,6 +282,10 @@ def payment_notify(request):
         "status": data["status"],
 #         "created_at": account.created_at.strftime("%Y-%m-%d %H:%M:%S"),
     }
+    payload["transaction_id"] = payment.trade_no
+    payload["CheckMacValue"] = (
+            generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
+    )
     
     # 付款成功
     if data["status"] == "paid":
@@ -293,13 +315,17 @@ def payment_notify(request):
 
             simulate_paid=True
         )
-        payload["transaction_id"] = payment.trade_no
-
-        res = notify_shop_paid(payload)
-        if res.status_code == 200:
-            return JsonResponse({"status":"success"})
-        else:
-            return JsonResponse({"status":"failed"})
+#        payload["transaction_id"] = payment.trade_no
+        
+        ### 新增修改：包裹外部 API 發送動作。預防 notify_shop_paid 因網路連線失敗或斷線導致整個 Webhook 崩潰 ###
+        try:
+            res = notify_shop_paid(payload)
+            if res.status_code == 200:
+                return JsonResponse({"status": "success"})
+            else:
+                return JsonResponse({"status": "failed"})
+        except Exception:
+            return JsonResponse({"status": "failed", "message": "Shop notification failed"}, status=502)
 # 付款失敗
     else:
         order.status = "failed"
@@ -329,13 +355,17 @@ def payment_notify(request):
             simulate_paid=False
         )
         
-        payload["transaction_id"] = payment.trade_no
+#        payload["transaction_id"] = payment.trade_no
         
-        res = notify_shop_failed(payload)
-        if res.status_code == 200:
-            return JsonResponse({"status":"success"})
-        else:
-            return JsonResponse({"status":"failed"})
+        ### 新增修改：同樣包裹失敗通知的外部 API，避免連線異常引發 500 錯誤 ###
+        try:
+            res = notify_shop_failed(payload)
+            if res.status_code == 200:
+                return JsonResponse({"status": "success"})
+            else:
+                return JsonResponse({"status": "failed"})
+        except Exception:
+            return JsonResponse({"status": "failed", "message": "Shop notification failed"}, status=502)
 
 
 @csrf_exempt
