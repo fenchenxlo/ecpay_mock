@@ -146,35 +146,244 @@ function submitForm(type) {
     const encodedNo = encodeURIComponent(merchantTradeNo);
     let targetUrl = '';
 	
+    // ================================
+    // 【修改處 1】
+    // 組出 API URL
+    // ================================
     if (type === 'paid') {
         targetUrl = `/cod_gateway/simulate_cod_paid/${encodedNo}/`;
     } else if (type === 'failed') {
         targetUrl = `/cod_gateway/simulate_cod_failed/${encodedNo}/`;
+    } else {
+        console.error('未知的 type:', type);
+        alert('未知的操作類型：' + type);
+        return;
     }
 
     // 取得當前頁面的 CSRF Token
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    if (!csrfElement) {
+        console.error('找不到 CSRF Token');
+        alert('找不到 CSRF Token，請重新整理頁面後再試');
+        return;
+    }
 
     // 使用 fetch 發送非同步 POST 請求，避免頁面被 JSON 蓋掉
+    // ================================
+    // 【修改處 2】
+    // 在送出 request 前，先把重要資訊印出來
+    // 方便確認到底打了哪一個 URL
+    // ================================
+    console.group('🚀 simulate COD request');
+    console.log('操作類型:', type);
+    console.log('原始訂單編號:', merchantTradeNo);
+    console.log('編碼後訂單編號:', encodedNo);
+    console.log('Request URL:', targetUrl);
+    console.log('Method:', 'POST');
+    console.groupEnd();
+
+    // 使用 fetch 發送非同步 POST 請求
     fetch(targetUrl, {
         method: 'POST',
         headers: {
             'X-CSRFToken': csrfToken,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+
+            // ================================
+            // 【修改處 3】
+            // 告訴後端我們希望收到 JSON
+            // ================================
+            'Accept': 'application/json'
         }
     })
-    .then(response => response.json().then(data => ({ status: response.status, body: data })))
+    // ================================
+    // 【修改處 4】
+    // 不要直接 response.json()
+    //
+    // 先取得 response 的完整資訊，
+    // 再讀取「原始文字」，避免：
+    //
+    // Unexpected token '<'
+    //
+    // ================================
+    .then(async response => {
+
+        console.group('📥 Server Response');
+
+        console.log('HTTP Status:', response.status);
+        console.log('Status Text:', response.statusText);
+        console.log('Response URL:', response.url);
+        console.log(
+            'Content-Type:',
+            response.headers.get('content-type')
+        );
+
+        // 先用 text() 讀取伺服器真正回傳的內容
+        const rawText = await response.text();
+
+        console.log('Raw Response:', rawText);
+
+        console.groupEnd();
+
+         // ================================
+        // 【修改處 5】
+        // 檢查 HTTP Status
+        //
+        // 例如：
+        // 200 = OK
+        // 400 = Bad Request
+        // 403 = CSRF / Permission
+        // 404 = URL 不存在
+        // 500 = 後端程式錯誤
+        // ================================
+        if (!response.ok) {
+
+            console.error(
+                `❌ HTTP Error ${response.status}`,
+                rawText
+            );
+
+            // 嘗試把錯誤內容解析成 JSON
+            let errorData = null;
+
+            try {
+                errorData = JSON.parse(rawText);
+            } catch (e) {
+                // 解析失敗代表很可能是 HTML
+                console.warn(
+                    '⚠️ Server response 不是 JSON，可能是 HTML 錯誤頁'
+                );
+            }
+
+            // 將錯誤資訊往 catch 傳
+            const serverMessage =
+                errorData?.error ||
+                errorData?.message ||
+                rawText.substring(0, 500);
+
+            throw new Error(
+                `HTTP ${response.status} ${response.statusText}\n` +
+                `URL: ${response.url}\n` +
+                `Server Response:\n${serverMessage}`
+            );
+        }
+
+        // ================================
+        // 【修改處 6】
+        // HTTP 是 200 也不要直接假設是 JSON
+        // 先檢查 Content-Type
+        // ================================
+        const contentType =
+            response.headers.get('content-type') || '';
+
+        if (!contentType.includes('application/json')) {
+
+            console.error(
+                '❌ Server 沒有回傳 JSON'
+            );
+
+            console.error(
+                'Content-Type:',
+                contentType
+            );
+
+            console.error(
+                'Raw Response:',
+                rawText
+            );
+
+            throw new Error(
+                '伺服器回傳的不是 JSON。\n' +
+                'Content-Type: ' + contentType + '\n' +
+                'Response:\n' + rawText.substring(0, 500)
+            );
+        }
+
+        // ================================
+        // 【修改處 7】
+        // 確認是 JSON 後才 JSON.parse()
+        // ================================
+        let data;
+
+        try {
+            data = JSON.parse(rawText);
+        } catch (jsonError) {
+
+            console.error(
+                '❌ JSON Parse Error:',
+                jsonError
+            );
+
+            console.error(
+                'Server 原始回應:',
+                rawText
+            );
+
+            throw new Error(
+                '伺服器回傳內容不是有效 JSON。\n' +
+                '原始回應：\n' +
+                rawText.substring(0, 500)
+            );
+        }
+
+        // 將整理後的結果傳給下一個 then()
+        return {
+            status: response.status,
+            body: data
+        };
+    })
+
+    // ================================
+    // 處理成功 / 失敗
+    // ================================
     .then(res => {
+
+        console.group('📊 API Result');
+        console.log('Status:', res.status);
+        console.log('Body:', res.body);
+        console.groupEnd();
+
         if (res.status === 200) {
-            alert('操作成功：' + (res.body.message || '已完成模擬'));
-            location.reload(); // 可選：成功後重新整理頁面更新左側資料庫數據
+
+            alert(
+                '操作成功：' +
+                (res.body.message || '已完成模擬')
+            );
+
+            // 成功後重新整理頁面
+            location.reload();
+
         } else {
-            alert('操作失敗：' + (res.body.error || res.body.message || '未知錯誤'));
+
+            alert(
+                '操作失敗：' +
+                (
+                    res.body.error ||
+                    res.body.message ||
+                    '未知錯誤'
+                )
+            );
         }
     })
+
+    // ================================
+    // 【修改處 8】
+    // catch 不再只顯示「網路連線錯誤」
+    //
+    // 現在會把真正的錯誤原因顯示出來
+    // ================================
     .catch(error => {
+
+        console.error('================================');
+        console.error('❌ simulate COD 發生錯誤');
         console.error('Error:', error);
-        alert('網路連線或伺服器發生錯誤');
+        console.error('Message:', error.message);
+        console.error('================================');
+
+        alert(
+            '操作失敗！\n\n' +
+            error.message
+        );
     });
 }
 </script>
