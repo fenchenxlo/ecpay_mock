@@ -54,6 +54,7 @@ class CODPaymentRequest(models.Model):
             ("cod_created", "待出貨"),
             ("cod_shipped", "配送中,待取貨付款"),   # 【新增】
             ("cod_paid", "已取貨付款"),             # 【新增】
+            ("cod_failed", "取貨付款失敗"),
         ],
         default="cod_created",
     )
