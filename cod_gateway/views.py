@@ -5,14 +5,15 @@ import traceback
 import datetime	 # 【新增】用於解析 merchant_trade_date 字串
 
 from django.conf import settings
-from django.db import transaction, IntegrityError
+from django.db import transaction, IntegrityError, connection
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
-
+from django.contrib.auth.decorators import user_passes_test
 from django.views.decorators.csrf import csrf_exempt
 
 from gateway.models import Order  # 只 import 共用 model,不修改 gateway app 任何檔案
 from util.ChkMacVal import generate_check_mac_value
 from .models import CODPaymentRequest
+from gateway.services import notify_shop_paid, notify_shop_failed  # 【重點】直接沿用既有的 notify_shop_paid/failed，不用重寫
 from django.utils import timezone  # 【新增】
 import logging			# 【新增】
 
@@ -491,6 +492,233 @@ def _log_and_build_error_response(view_name, exception, status=500):
 		status=status,
 	)
 
+
+def is_admin(user):
+    """判斷是否為已登入的管理員(superuser) —— 若 cod_gateway/views.py 目前沒有這個 function，複製這段過來即可"""
+    return user.is_authenticated and user.is_superuser
+
+@user_passes_test(is_admin, login_url='/admin/login/')
+def db_query_tool(request):
+    """
+    資料庫查詢工具:
+    流程 —— 使用者先選擇 table,選定後列出該 table 所有欄位,
+    再選擇「兩個」欄位(column1、column2),查詢這兩個欄位
+    「同一列(同一筆資料)」對應的值,例如 order_number 對應 status。
+
+    重點:兩個欄位必須放在同一個 SELECT 裡一起查,才能保證
+    回傳的每一筆 (col1值, col2值) 確實來自同一列資料,
+    而不是像分開查兩次那樣,兩份清單各自篩選、順序對不上。
+    """
+    tables = []          # 所有可查詢的 table 名稱
+    columns = []          # 目前選定 table 的欄位名稱清單
+    rows = []              # 查詢結果,每筆是 (col1值, col2值) 的 tuple
+    error = None           # 查詢過程中若有錯誤,存放錯誤訊息
+
+    table_choice = request.GET.get('table', '')      # 使用者選擇的 table 名稱
+    column1_choice = request.GET.get('column1', '')  # 使用者選擇的第一個欄位
+    column2_choice = request.GET.get('column2', '')  # 使用者選擇的第二個欄位
+
+    with connection.cursor() as cursor:
+        # 1. 取得資料庫中所有「業務用」table
+        #    排除 sqlite 系統表、django 內建表、auth 相關表,避免查到不該看的系統資料
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' "
+            "AND name NOT LIKE 'django_%' "
+            "AND name NOT LIKE 'auth_%';"
+        )
+        tables = [r[0] for r in cursor.fetchall()]
+
+        # 2. 若使用者有選擇 table,且該 table 確實存在於允許清單中
+        #    (白名單檢查,防止使用者從網址列竄改 table 參數)
+        if table_choice and table_choice in tables:
+            # 2-1. 取得該 table 的所有欄位名稱(給使用者選擇用)
+            cursor.execute(f"PRAGMA table_info({table_choice});")
+            columns = [r[1] for r in cursor.fetchall()]
+
+            # 3. 兩個欄位都要有選,且都存在於這個 table 的欄位清單中(白名單檢查),
+            #    且不能選成同一個欄位(對應兩個一樣的東西沒有意義)
+            if (column1_choice and column2_choice
+                    and column1_choice in columns
+                    and column2_choice in columns
+                    and column1_choice != column2_choice):
+                try:
+                    # 3-1. 關鍵修改:col1、col2 放在同一個 SELECT 裡一起撈,
+                    #      確保同一列回傳的兩個值是「同一筆資料」的對應值。
+                    #      table_choice / column1_choice / column2_choice
+                    #      都已經過白名單檢查,用 f-string 組 SQL 是安全的。
+                    #      加上 ORDER BY rowid,確保每次查詢順序固定一致。
+                    query = (
+                        f"SELECT {column1_choice}, {column2_choice} "
+                        f"FROM {table_choice} "
+                        f"WHERE {column1_choice} IS NOT NULL "
+                        f"AND {column2_choice} IS NOT NULL "
+                        f"ORDER BY rowid;"
+                    )
+                    cursor.execute(query)
+                    # 直接存成 tuple list:[(col1值, col2值), (col1值, col2值), ...]
+                    rows = [(r[0], r[1]) for r in cursor.fetchall()]
+                except Exception as e:
+                    # 查詢過程中若發生錯誤(例如欄位型別問題),記錄錯誤訊息
+                    error = str(e)
+
+    context = {
+        'tables': tables,
+        'columns': columns,
+        'rows': rows,
+        'error': error,
+        'table_choice': table_choice,
+        'column1_choice': column1_choice,
+        'column2_choice': column2_choice,
+    }
+    return render(request, 'admin_tools/db_query.html', context)
+
+@csrf_exempt
+@user_passes_test(is_admin, login_url='/admin/login/')
+def query_and_simulate_cod(request):
+    """
+    合併頁面（COD 版）:左側是 SQL 查詢工具（邏輯與 Bank_site 版本完全相同，原樣搬過來），
+    右側改為「超商取貨付款」模擬工具。
+
+    這是 COD 流程的起點頁面，跟 Bank_site 的 query_and_simulate 互不影響、
+    也跟 db_query_tool 互不影響。
+    """
+    tables = []
+    columns = []
+    rows = []
+    error = None
+    table_choice = request.GET.get('table', '')
+    column_choice = request.GET.get('column', '')
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' "
+            "AND name NOT LIKE 'django_%' "
+            "AND name NOT LIKE 'auth_%';"
+        )
+        tables = [r[0] for r in cursor.fetchall()]
+
+        if table_choice and table_choice in tables:
+            cursor.execute(f"PRAGMA table_info({table_choice});")
+            columns = [r[1] for r in cursor.fetchall()]
+
+            if column_choice and column_choice in columns:
+                try:
+                    query = (
+                        f"SELECT {column_choice} FROM {table_choice} "
+                        f"WHERE {column_choice} IS NOT NULL;"
+                    )
+                    cursor.execute(query)
+                    rows = [{column_choice: r[0]} for r in cursor.fetchall()]
+                except Exception as e:
+                    error = str(e)
+
+    context = {
+        'tables': tables,
+        'columns': columns,
+        'rows': rows,
+        'error': error,
+        'table_choice': table_choice,
+        'column_choice': column_choice,
+    }
+    return render(request, 'admin_tools/query_simulate_cod.html', context)
+
+@csrf_exempt
+@user_passes_test(is_admin, login_url='/admin/login/')
+def simulate_cod_paid(request, merchant_trade_no):
+    """
+    【新增】COD 版模擬付款起點。
+    重點差異:因為起點就在 ecpay_mock 自己身上，不像 ATM 流程還要先經過
+    Bank_site 打一次 payment_notify，這裡直接把「更新自己狀態」+
+    「通知 E_commerce」兩件事做完，等同合併了 Bank_site.simulate_paid
+    和 Ecpay_mock.payment_notify 這兩層的工作。
+    """
+
+    try:
+        cod_request = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
+    except CODPaymentRequest.DoesNotExist:
+        return JsonResponse({"status": "failed", "message": "找不到該筆訂單編號"}, status=44)
+
+    # 更新 ecpay_mock 自己這邊（cod_gateway app）的狀態
+    cod_request.status = "cod_paid"
+    cod_request.paid_at = timezone.now()
+    cod_request.save()
+
+    # 同步更新共用的 gateway.Order（跟 payment_notify 裡 order.status = "paid" 對應）
+    order = cod_request.order
+    order.status = "paid"
+    order.save()
+
+    payload = {
+        "merchant_trade_no": cod_request.merchant_trade_no,
+        "trade_amt": int(cod_request.trade_amt),
+        "status": "paid",
+        # 【新增】transaction_id：COD 沒有像 PaymentRequest.trade_no 這種欄位，
+        # 用 merchant_trade_no 頂替（本身 unique，可以安全當 Payment.transaction_id 用）
+#        "transaction_id": cod_request.merchant_trade_no,
+        "transaction_id": str(uuid.uuid4()),
+        # 【新增】讓 E_commerce 那邊分得出這筆是 COD、不是 ATM
+        "payment_method": "COD",
+        "cvs_store_name": str(cod_request.store_name or ""),
+        "cvs_store_address": str(cod_request.store_address or ""),
+    }
+
+    # payload["CheckMacValue"] = (
+        # generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
+    # )
+
+    try:
+        # 沿用既有的 notify_shop_paid，內部本來就是通用的 httpx.post，不用改
+        res = notify_shop_paid(payload)
+        if res.status_code == 200:
+            return JsonResponse({"status": "success", "message": "模擬付款成功，已同步通知商店！"})
+        else:
+            return JsonResponse({"status": "failed", "error": res.text}, status=400)
+    except Exception as ex:
+        return JsonResponse({"status": "failed", "message": str(ex)}, status=500)
+
+@csrf_exempt
+@user_passes_test(is_admin, login_url='/admin/login/')
+def simulate_cod_failed(request, merchant_trade_no):
+    """【新增】COD 版模擬「未取貨/退貨」，邏輯與 simulate_cod_paid 對稱"""
+    try:
+        cod_request = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
+    except CODPaymentRequest.DoesNotExist:
+        return JsonResponse({"status": "failed", "message": "找不到該筆訂單編號"}, status=44)
+
+    # 【注意】CODPaymentRequest.status 目前的 choices 只有
+    # cod_created / cod_shipped / cod_paid，沒有失敗狀態，
+    # 下面這行如果要存進 DB，choices 需要你另外加一個 ("cod_failed", "取貨失敗/退貨") 才會通過表單驗證
+    cod_request.status = "cod_failed"
+    cod_request.save()
+
+    order = cod_request.order
+    order.status = "failed"
+    order.save()
+
+    payload = {
+        "merchant_trade_no": cod_request.merchant_trade_no,
+        "trade_amt": int(cod_request.trade_amt),
+        "status": "failed",
+#        "transaction_id": cod_request.merchant_trade_no,
+        "transaction_id": str(uuid.uuid4()),
+        "payment_method": "COD",
+        "cvs_store_name": str(cod_request.store_name or ""),
+        "cvs_store_address": str(cod_request.store_address or ""),
+    }
+    # payload["CheckMacValue"] = (
+        # generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
+    # )
+
+    try:
+        res = notify_shop_failed(payload)
+        if res.status_code == 200:
+            return JsonResponse({"status": "success", "message": "模擬付款成功，已同步通知商店！"})
+        else:
+            return JsonResponse({"status": "failed", "error": res.text}, status=400)
+    except Exception as ex:
+        return JsonResponse({"status": "failed", "message": str(ex)}, status=500)
 
 @csrf_exempt
 @transaction.atomic
