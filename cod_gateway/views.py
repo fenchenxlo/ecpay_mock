@@ -626,7 +626,7 @@ def query_and_simulate_cod(request):
 
 @csrf_exempt
 @user_passes_test(is_admin, login_url='/admin/login/')
-def simulate_cod_paid(request, merchant_trade_no):
+def simulate_cvscod_paid(request, merchant_trade_no):
     """
     【新增】COD 版模擬付款起點。
     重點差異:因為起點就在 ecpay_mock 自己身上，不像 ATM 流程還要先經過
@@ -680,8 +680,8 @@ def simulate_cod_paid(request, merchant_trade_no):
 
 @csrf_exempt
 @user_passes_test(is_admin, login_url='/admin/login/')
-def simulate_cod_failed(request, merchant_trade_no):
-    """【新增】COD 版模擬「未取貨/退貨」，邏輯與 simulate_cod_paid 對稱"""
+def simulate_cvscod_failed(request, merchant_trade_no):
+    """【新增】COD 版模擬「未取貨/退貨」，邏輯與 simulate_cvscod_paid 對稱"""
     try:
         cod_request = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
     except CODPaymentRequest.DoesNotExist:

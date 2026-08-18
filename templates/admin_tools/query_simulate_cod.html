@@ -151,9 +151,9 @@ function submitForm(type) {
     // 組出 API URL
     // ================================
     if (type === 'paid') {
-        targetUrl = `/cod_gateway/simulate_cod_paid/${encodedNo}/`;
+        targetUrl = `/cod_gateway/simulate_cvscod_paid/${encodedNo}/`;
     } else if (type === 'failed') {
-        targetUrl = `/cod_gateway/simulate_cod_failed/${encodedNo}/`;
+        targetUrl = `/cod_gateway/simulate_cvscod_failed/${encodedNo}/`;
     } else {
         console.error('未知的 type:', type);
         alert('未知的操作類型：' + type);
