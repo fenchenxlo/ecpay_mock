@@ -223,13 +223,6 @@ function submitForm(type) {
         const rawText = await response.text();
 
         console.log('Raw Response:', rawText);
-		
-		// 如果想同時看到「原始文字」跟「解碼後中文」,可以加這一行做預覽:
-		try {
-			console.log('Raw Response (解碼預覽):', JSON.parse(rawText));
-		} catch (e) {
-			// 不是合法 JSON 就跳過,不影響原本流程
-		}
 
         console.groupEnd();
 
