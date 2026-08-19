@@ -672,7 +672,7 @@ def simulate_cvscod_paid(request, merchant_trade_no):
         # 沿用既有的 notify_shop_paid，內部本來就是通用的 httpx.post，不用改
         res = notify_shop_paid(payload)
         if res.status_code == 200:
-            return JsonResponse({"status": "success", "message": "模擬付款成功，已同步通知商店！"})
+            return JsonResponse({"status": "success", "message": "模擬 已取貨付款 成功，已同步通知商店！"})
         else:
             return JsonResponse({"status": "failed", "error": res.text}, status=400)
     except Exception as ex:
@@ -714,7 +714,7 @@ def simulate_cvscod_failed(request, merchant_trade_no):
     try:
         res = notify_shop_failed(payload)
         if res.status_code == 200:
-            return JsonResponse({"status": "success", "message": "模擬付款成功，已同步通知商店！"})
+            return JsonResponse({"status": "success", "message": "模擬 取貨失敗未付款 成功，已同步通知商店！"})
         else:
             return JsonResponse({"status": "failed", "error": res.text}, status=400)
     except Exception as ex:
