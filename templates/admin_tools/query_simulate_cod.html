@@ -352,7 +352,10 @@ function submitForm(type) {
             );
 
             // 成功後重新整理頁面
-            location.reload();
+            //location.reload();
+			
+			// 改成:重新載入頁面,但不帶任何 query string(table、column 都清空)
+			window.location.href = window.location.pathname;
 
         } else {
 
