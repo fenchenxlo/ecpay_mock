@@ -9,6 +9,7 @@ from django.db import transaction, IntegrityError, connection
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.contrib.auth.decorators import user_passes_test
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib import messages
 
 from gateway.models import Order  # 只 import 共用 model,不修改 gateway app 任何檔案
 from util.ChkMacVal import generate_check_mac_value
@@ -1159,6 +1160,71 @@ def simulate_cod_paid(request, merchant_trade_no):
     logger.info(f"[simulate_cod_paid] 訂單 {merchant_trade_no} 已模擬「顧客取貨付款」完成")
     context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
     return render(request, "cod_info.html", context)
+
+@csrf_exempt
+def mock_shipped(request, merchant_trade_no):
+    """
+    【新增】模擬:貨物已送達超商(demo 用,沒有真的物流串接,由人工按鈕觸發)。
+    只更新 CODPaymentRequest.status: cod_created → cod_shipped。
+    這一步不需要通知商城(商城端目前只在乎「待處理」vs「已付款」,不細分配送中),
+    純粹是讓 cod_gateway 這邊的狀態機走完整個流程,方便你之後想在商城端顯示
+    更細的物流狀態時,資料已經現成可以接上。
+    """
+    if request.method != "POST":
+        return HttpResponse("method error", status=405)
+
+    try:
+        cod_payment = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
+    except CODPaymentRequest.DoesNotExist as e:
+        return _log_and_build_error_response("simulate_shipped.not_found", e, status=404)
+    except Exception as e:
+        return _log_and_build_error_response("simulate_shipped.db_read_unexpected", e, status=500)
+
+    # 防呆:只有「待出貨」狀態才能模擬出貨,避免重複點擊/瀏覽器返回上一頁重送
+    # 造成狀態被錯誤地從 cod_paid 又打回 cod_shipped
+    if cod_payment.status != "cod_created":
+        logger.warning(
+            f"[simulate_shipped] 訂單 {merchant_trade_no} 目前狀態是 "
+            f"{cod_payment.status},不是 cod_created,略過這次模擬,直接顯示現況"
+        )
+        # ================================
+        # 【修改處 D】狀態不符時,改用 messages.error
+        # 並直接回傳 JSON,讓前端 alert 顯示真正原因
+        # (不再 render 模板,因為這支 view 現在的合約是回 JSON)
+        # ================================
+        messages.error(
+            request,
+            f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,不是待出貨,已略過此次模擬。"
+        )
+        return JsonResponse(
+            {"message": f"訂單狀態非 cod_created(目前為 {cod_payment.status}),已略過"},
+            status=200,
+        )
+
+    try:
+        cod_payment.status = "cod_shipped"
+        cod_payment.shipped_at = timezone.now()
+        cod_payment.save()
+    except Exception as e:
+        return _log_and_build_error_response("simulate_shipped.db_write", e, status=500)
+
+    logger.info(f"[simulate_shipped] 訂單 {merchant_trade_no} 已模擬「貨已送達超商」")
+    # ================================
+    # 【修改處 E】成功時寫入 messages,
+    # 讓等一下前端刷新頁面時能顯示這則狀態
+    # ================================
+    messages.success(request, f"訂單 {merchant_trade_no} 已模擬「貨已送達超商」")
+
+    # ================================
+    # 【修改處 F】改回傳 JsonResponse 而不是 redirect,
+    # 因為前端是用 fetch 呼叫這支 API,需要 JSON 格式
+    # 才能通過 submitForm() 裡的 content-type 檢查;
+    # 頁面導轉改由前端 JS 的 window.location.href 處理
+    # ================================
+    return JsonResponse(
+        {"message": f"訂單 {merchant_trade_no} 已模擬「貨已送達超商」"},
+        status=200,
+    )
 
 # @csrf_exempt
 # def confirm_store(request):

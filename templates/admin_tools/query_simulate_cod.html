@@ -53,6 +53,24 @@
     </p>
 </div>
 
+<!-- ================================
+     【新增處 C】顯示 Django messages,
+     用來呈現「模擬付款/出貨」等操作後的執行狀態
+     ================================ -->
+{% if messages %}
+    <ul class="messages" style="list-style: none; padding: 0;">
+        {% for message in messages %}
+            <li class="{{ message.tags }}"
+                style="padding: 8px 12px; margin-bottom: 8px; border-radius: 6px;
+                       {% if message.tags == 'success' %}background:#e6ffed;color:#036b26;
+                       {% elif message.tags == 'error' %}background:#ffe6e6;color:#a30000;
+                       {% else %}background:#eef;color:#333;{% endif %}">
+                {{ message }}
+            </li>
+        {% endfor %}
+    </ul>
+{% endif %}
+
 <div class="layout">
 
     <!-- ==================== 左側:SQL 查詢工具 ==================== -->
@@ -129,6 +147,15 @@
             {% csrf_token %}
             <button type="button" onclick="submitForm('failed')">模擬取貨失敗未付款</button>
         </form>
+		
+		<!-- ================================
+             【新增處 A】模擬:貨物已送達超商
+             ================================ -->
+        <form id="form-shipped" method="post" action="">
+            {% csrf_token %}
+            <button type="button" onclick="submitForm('shipped')">模擬貨已送達超商</button>
+        </form>
+		
     </div>
 </div>
 
@@ -154,6 +181,12 @@ function submitForm(type) {
         targetUrl = `/cod_gateway/simulate_cvscod_paid/${encodedNo}/`;
     } else if (type === 'failed') {
         targetUrl = `/cod_gateway/simulate_cvscod_failed/${encodedNo}/`;
+    // ================================
+    // 【新增處 B】對應 mock_shipped 的路由
+    // ================================
+    } else if (type === 'shipped') {
+        targetUrl = `/cod_gateway/mock_shipped/${encodedNo}/`;
+
     } else {
         console.error('未知的 type:', type);
         alert('未知的操作類型：' + type);

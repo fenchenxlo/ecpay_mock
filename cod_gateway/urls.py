@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import cod_checkout, select_store, review_store, confirm_store, simulate_shipped, db_query_tool, simulate_cod_paid, simulate_cvscod_paid, simulate_cvscod_failed, query_and_simulate_cod  # 【新增】
+from .views import cod_checkout, select_store, review_store, confirm_store, simulate_shipped, db_query_tool, simulate_cod_paid, simulate_cvscod_paid, simulate_cvscod_failed, query_and_simulate_cod, mock_shipped  # 【新增】
 
 urlpatterns = [
     path("cod_checkout/", cod_checkout, name="cod_checkout"),
@@ -13,4 +13,5 @@ urlpatterns = [
     path('query_and_simulate_cod/', query_and_simulate_cod, name='query_and_simulate_cod'),
     path('simulate_cvscod_paid/<str:merchant_trade_no>/', simulate_cvscod_paid, name='simulate_cvscod_paid'),
     path('simulate_cvscod_failed/<str:merchant_trade_no>/', simulate_cvscod_failed, name='simulate_cvscod_failed'),
+    path('mock_shipped/<str:merchant_trade_no>/', mock_shipped, name='mock_shipped'),
 ]
