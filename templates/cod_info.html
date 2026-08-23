@@ -28,29 +28,8 @@
             <tr><td>訂單狀態</td><td>{{ cod.get_status_display }}</td></tr>  <!-- 【修改】原本寫死「待出貨」,改成動態顯示 -->
         </table>
     </div>
-    <script>
-        /*function goBack() {
-            if (history.length >= 2) {
-                   history.go(-2);
-            } else {
-                   history.go(-1);
-            }
-        }*/
-    </script>
-	{% if cod.status == 'cod_created' %}
-    <form method="post" action="{% url 'simulate_shipped' cod.merchant_trade_no %}" style="display:inline;">
-        {% csrf_token %}
-        <button type="submit" class="btn">模擬:貨已送達超商</button>
-    </form>
-	{% elif cod.status == 'cod_shipped' %}
-		<form method="post" action="{% url 'simulate_cod_paid' cod.merchant_trade_no %}" style="display:inline;">
-			{% csrf_token %}
-			<button type="submit" class="btn">模擬:顧客取貨付款</button>
-		</form>
-	{% elif cod.status == 'cod_paid' %}
-		<p style="color:green; font-weight:bold;">✅ 已完成取貨付款</p>
-	{% endif %}
-	<!-- 回商店訂單頁修改付款方式 -->
+    
+	<!-- 回商店訂單頁 -->
 	<a href="{{ HF_SPACE_E_COMMERCE_URL }}/commerce_shop/purchased_products/">
 		返回商品頁
 	</a>

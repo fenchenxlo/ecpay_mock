@@ -283,9 +283,9 @@ def payment_notify(request):
 #         "created_at": account.created_at.strftime("%Y-%m-%d %H:%M:%S"),
     }
     #payload["transaction_id"] = payment.trade_no
-    # payload["CheckMacValue"] = (
-            # generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
-    # )
+    payload["CheckMacValue"] = (
+            generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
+    )
     
     # 付款成功
     if data["status"] == "paid":
