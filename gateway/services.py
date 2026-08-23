@@ -15,9 +15,9 @@ def notify_shop_paid(payload):
 # #         "created_at": payment.created_at,
 #     }
 
-    payload["CheckMacValue"] = (
-        generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
-    )
+    # payload["CheckMacValue"] = (
+        # generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
+    # )
     
     response = httpx.post(
 
@@ -42,9 +42,9 @@ def notify_shop_failed(payload):
 # #         "created_at": payment.created_at,
 #     }
 
-    payload["CheckMacValue"] = (
-        generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
-    )
+    # payload["CheckMacValue"] = (
+        # generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
+    # )
 
     response = httpx.post(
 

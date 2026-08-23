@@ -666,9 +666,9 @@ def simulate_cvscod_paid(request, merchant_trade_no):
         "cvs_store_address": str(cod_request.store_address or ""),
     }
 
-    # payload["CheckMacValue"] = (
-        # generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
-    # )
+    payload["CheckMacValue"] = (
+        generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
+    )
     
     try:
         # 沿用既有的 notify_shop_paid，內部本來就是通用的 httpx.post，不用改
@@ -740,9 +740,9 @@ def simulate_cvscod_failed(request, merchant_trade_no):
         "cvs_store_name": str(cod_request.store_name or ""),
         "cvs_store_address": str(cod_request.store_address or ""),
     }
-    # payload["CheckMacValue"] = (
-        # generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
-    # )
+    payload["CheckMacValue"] = (
+        generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
+    )
 
     try:
         res = notify_shop_failed(payload)
