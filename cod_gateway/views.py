@@ -1355,18 +1355,71 @@ def mock_created(request, merchant_trade_no):
         return _log_and_build_error_response("simulate_shipped.db_read_unexpected", e, status=500)
 
     try:
-        cod_payment.status = "cod_created"
-        cod_payment.shipped_at = timezone.now()
-        cod_payment.save()
-    except Exception as e:
-        return _log_and_build_error_response("simulate_shipped.db_write", e, status=500)
+        with transaction.atomic():
+            cod_payment.status = "cod_created"
+            cod_payment.shipped_at = timezone.now()
+            cod_payment.save()
+            logger.info(f"[mock_shipped] 訂單 {merchant_trade_no} 已模擬「待出貨到超商」")
+            # ================================
+            # 【修改處 E】成功時寫入 messages,
+            # 讓等一下前端刷新頁面時能顯示這則狀態
+            # ================================
+            messages.success(request, f"訂單 {merchant_trade_no} 已模擬「待出貨到超商」")
 
-    logger.info(f"[simulate_shipped] 訂單 {merchant_trade_no} 已模擬「待出貨到超商」")
-    # ================================
-    # 【修改處 E】成功時寫入 messages,
-    # 讓等一下前端刷新頁面時能顯示這則狀態
-    # ================================
-    messages.success(request, f"訂單 {merchant_trade_no} 已模擬「待出貨到超商」")
+            payload = {
+                "merchant_trade_no": cod_payment.merchant_trade_no,
+                "trade_amt": int(cod_payment.trade_amt),
+                "status": "pending",
+                # 【新增】transaction_id：COD 沒有像 PaymentRequest.trade_no 這種欄位，
+                # 用 merchant_trade_no 頂替（本身 unique，可以安全當 Payment.transaction_id 用）
+#               "transaction_id": cod_payment.merchant_trade_no,
+                "transaction_id": str(uuid.uuid4()),
+                # 【新增】讓 E_commerce 那邊分得出這筆是 COD、不是 ATM
+                "payment_method": "COD",
+                "cvs_store_name": str(cod_payment.store_name or ""),
+                "cvs_store_address": str(cod_payment.store_address or ""),
+            }
+
+            payload["CheckMacValue"] = (
+                generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
+            )
+            # 沿用既有的 notify_shop_paid，內部本來就是通用的 httpx.post，不用改
+            res = notify_shop_paid(payload)
+            if res.status_code == 200:
+            # ================================
+            # 【修改處 E】成功時寫入 messages,
+            # 讓等一下前端刷新頁面時能顯示這則狀態
+            # ================================
+                messages.success(request, 
+                    f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」, 模擬成功:「貨物待出貨到超商，已同步通知商店！」")
+                return JsonResponse({"message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」, 模擬成功:「貨物待出貨到超商，已同步通知商店！」", 
+                "status": "success"},status=200)
+            else:
+            # ================================
+            # 改用 messages.error
+            # 並直接回傳 JSON,讓前端 alert 顯示真正原因
+            # (不再 render 模板,因為這支 view 現在的合約是回 JSON)
+            # ================================
+                messages.error(request,
+                    f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,模擬失敗: 貨物待出貨到超商,未同步通知商店！")
+                return JsonResponse({"message": f"訂單狀態非 cod_created(目前為 {cod_payment.status}),模擬失敗: 貨物待出貨到超商,未同步通知商店！",
+                    "status": "failed", "error": res.text},
+                    status=400,
+                )
+    except Exception as e:
+#        return _log_and_build_error_response("simulate_shipped.db_write", e, status=500)
+        # ================================
+        # 改回傳 JsonResponse 而不是 redirect,
+        # 因為前端是用 fetch 呼叫這支 API,需要 JSON 格式
+        # 才能通過 submitForm() 裡的 content-type 檢查;
+        # 頁面導轉改由前端 JS 的 window.location.href 處理
+        # ================================
+        messages.error(request,
+            f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤,請重新操做。")
+        return JsonResponse(
+            {"status": "failed", "message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤:{str(ex)}"},
+            status=500,
+        )
 
     # ================================
     # 【修改處 F】改回傳 JsonResponse 而不是 redirect,
