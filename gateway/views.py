@@ -230,17 +230,17 @@ def payment_notify(request):
     except (json.JSONDecodeError, TypeError):
         return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
 		
-    print("data: ",data)
+    print("payment_notify data: ",data)
 
 ### 新增修改：改用 .pop(key, default) 方式取值。若對方沒傳 CheckMacValue，會拿到 None 而不是直接噴 500 KeyError ###
     recv_mac = data.pop("CheckMacValue", None)
     if not recv_mac:
         return JsonResponse({"status": "error", "message": "Missing CheckMacValue"}, status=400)
-    #logger.info(f"recv_mac={recv_mac}")
+    logger.info(f"recv_mac={recv_mac}")
     local_mac = (
         generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
     )
-    #logger.info(f"local_mac={local_mac}")
+    logger.info(f"local_mac={local_mac}")
     if recv_mac != local_mac:
 
         return JsonResponse({
@@ -286,7 +286,7 @@ def payment_notify(request):
     payload["CheckMacValue"] = (
             generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
     )
-    
+    print("payment_notify : payload['CheckMacValue']=",payload["CheckMacValue"])    
     # 付款成功
     if data["status"] == "paid":
         order.status = "paid"
