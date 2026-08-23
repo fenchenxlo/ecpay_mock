@@ -679,8 +679,8 @@ def simulate_cvscod_paid(request, merchant_trade_no):
             # 讓等一下前端刷新頁面時能顯示這則狀態
             # ================================
             messages.success(request, 
-                f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」, 模擬「已取貨付款成功，已同步通知商店！」")
-            return JsonResponse({"message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」, 模擬 已取貨付款 成功，已同步通知商店！", 
+                f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」, 模擬「已取貨付款成功，已同步通知商店！」")
+            return JsonResponse({"message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」, 模擬 已取貨付款 成功，已同步通知商店！", 
                 "status": "success"},status=200)
         else:
             # ================================
@@ -689,8 +689,8 @@ def simulate_cvscod_paid(request, merchant_trade_no):
             # (不再 render 模板,因為這支 view 現在的合約是回 JSON)
             # ================================
             messages.error(request,
-                f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,不是已取貨付款,未同步通知商店！")
-            return JsonResponse({"message": f"訂單狀態非 cod_created(目前為 {cod_payment.status}),不是已取貨付款,未同步通知商店！",
+                f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」,不是已取貨付款,未同步通知商店！")
+            return JsonResponse({"message": f"訂單狀態非 cod_created(目前為 {cod_request.status}),不是已取貨付款,未同步通知商店！",
                     "status": "failed", "error": res.text},
                 status=400,
             )
@@ -703,9 +703,9 @@ def simulate_cvscod_paid(request, merchant_trade_no):
         # 頁面導轉改由前端 JS 的 window.location.href 處理
         # ================================
         messages.error(request,
-            f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤,請重新操做。")
+            f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」,發生錯誤,請重新操做。")
         return JsonResponse(
-            {"status": "failed", "message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤:{str(ex)}"},
+            {"status": "failed", "message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」,發生錯誤:{str(ex)}"},
             status=500,
         )
 #        return JsonResponse({"status": "failed", "message": str(ex)}, status=500)
@@ -763,8 +763,8 @@ def simulate_cvscod_failed(request, merchant_trade_no):
             # (不再 render 模板,因為這支 view 現在的合約是回 JSON)
             # ================================
             messages.error(request,
-                f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,模擬失敗:「取貨付款失敗，未同步通知商店！」")
-            return JsonResponse({"message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,模擬失敗:「取貨付款失敗，未同步通知商店！」",
+                f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」,模擬失敗:「取貨付款失敗，未同步通知商店！」")
+            return JsonResponse({"message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」,模擬失敗:「取貨付款失敗，未同步通知商店！」",
                     "status": "failed", "error": res.text},
                 status=400,
             )
@@ -777,9 +777,9 @@ def simulate_cvscod_failed(request, merchant_trade_no):
         # 頁面導轉改由前端 JS 的 window.location.href 處理
         # ================================
         messages.error(request,
-            f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤:{str(ex)}")
+            f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」,發生錯誤:{str(ex)}")
         return JsonResponse(
-            {"status": "failed", "message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤:{str(ex)}"},
+            {"status": "failed", "message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_request.status}」,發生錯誤:{str(ex)}"},
             status=500,
         )
 #        return JsonResponse({"status": "failed", "message": str(ex)}, status=500)
