@@ -627,6 +627,7 @@ def query_and_simulate_cod(request):
 
 @csrf_exempt
 @user_passes_test(is_admin, login_url='/admin/login/')
+@transaction.atomic
 def simulate_cvscod_paid(request, merchant_trade_no):
     """
     【新增】COD 版模擬付款起點。
@@ -668,19 +669,50 @@ def simulate_cvscod_paid(request, merchant_trade_no):
     # payload["CheckMacValue"] = (
         # generate_check_mac_value(payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV)
     # )
-
+    
     try:
         # 沿用既有的 notify_shop_paid，內部本來就是通用的 httpx.post，不用改
         res = notify_shop_paid(payload)
         if res.status_code == 200:
-            return JsonResponse({"status": "success", "message": "模擬 已取貨付款 成功，已同步通知商店！"})
+            # ================================
+            # 【修改處 E】成功時寫入 messages,
+            # 讓等一下前端刷新頁面時能顯示這則狀態
+            # ================================
+            messages.success(request, 
+                f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」, 模擬「已取貨付款成功，已同步通知商店！」")
+            return JsonResponse({"message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」, 模擬 已取貨付款 成功，已同步通知商店！", 
+                "status": "success"},status=200)
         else:
-            return JsonResponse({"status": "failed", "error": res.text}, status=400)
+            # ================================
+            # 改用 messages.error
+            # 並直接回傳 JSON,讓前端 alert 顯示真正原因
+            # (不再 render 模板,因為這支 view 現在的合約是回 JSON)
+            # ================================
+            messages.error(request,
+                f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,不是已取貨付款,未同步通知商店！")
+            return JsonResponse({"message": f"訂單狀態非 cod_created(目前為 {cod_payment.status}),不是已取貨付款,未同步通知商店！",
+                    "status": "failed", "error": res.text},
+                status=400,
+            )
+#            return JsonResponse({"status": "failed", "error": res.text}, status=400)
     except Exception as ex:
-        return JsonResponse({"status": "failed", "message": str(ex)}, status=500)
+        # ================================
+        # 改回傳 JsonResponse 而不是 redirect,
+        # 因為前端是用 fetch 呼叫這支 API,需要 JSON 格式
+        # 才能通過 submitForm() 裡的 content-type 檢查;
+        # 頁面導轉改由前端 JS 的 window.location.href 處理
+        # ================================
+        messages.error(request,
+            f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤,請重新操做。")
+        return JsonResponse(
+            {"status": "failed", "message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤:{str(ex)}"},
+            status=500,
+        )
+#        return JsonResponse({"status": "failed", "message": str(ex)}, status=500)
 
 @csrf_exempt
 @user_passes_test(is_admin, login_url='/admin/login/')
+@transaction.atomic
 def simulate_cvscod_failed(request, merchant_trade_no):
     """【新增】COD 版模擬「未取貨/退貨」，邏輯與 simulate_cvscod_paid 對稱"""
     try:
@@ -715,11 +747,42 @@ def simulate_cvscod_failed(request, merchant_trade_no):
     try:
         res = notify_shop_failed(payload)
         if res.status_code == 200:
-            return JsonResponse({"status": "success", "message": "模擬 取貨失敗未付款 成功，已同步通知商店！"})
+            # ================================
+            # 失敗時寫入 messages,
+            # 讓等一下前端刷新頁面時能顯示這則狀態
+            # ================================
+            messages.success(request, 
+                f"訂單 {merchant_trade_no} 成功模擬「取貨付款失敗，已同步通知商店！」")
+            return JsonResponse({"message": "成功模擬「取貨付款失敗，已同步通知商店！」", 
+                "status": "success"},status=200)
+#            return JsonResponse({"status": "success", "message": "模擬 「取貨付款失敗，未同步通知商店！」"})
         else:
-            return JsonResponse({"status": "failed", "error": res.text}, status=400)
+            # ================================
+            # 改用 messages.error
+            # 並直接回傳 JSON,讓前端 alert 顯示真正原因
+            # (不再 render 模板,因為這支 view 現在的合約是回 JSON)
+            # ================================
+            messages.error(request,
+                f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,模擬失敗:「取貨付款失敗，未同步通知商店！」")
+            return JsonResponse({"message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,模擬失敗:「取貨付款失敗，未同步通知商店！」",
+                    "status": "failed", "error": res.text},
+                status=400,
+            )
+#            return JsonResponse({"status": "failed", "error": res.text}, status=400)
     except Exception as ex:
-        return JsonResponse({"status": "failed", "message": str(ex)}, status=500)
+        # ================================
+        # 改回傳 JsonResponse 而不是 redirect,
+        # 因為前端是用 fetch 呼叫這支 API,需要 JSON 格式
+        # 才能通過 submitForm() 裡的 content-type 檢查;
+        # 頁面導轉改由前端 JS 的 window.location.href 處理
+        # ================================
+        messages.error(request,
+            f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤:{str(ex)}")
+        return JsonResponse(
+            {"status": "failed", "message": f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,發生錯誤:{str(ex)}"},
+            status=500,
+        )
+#        return JsonResponse({"status": "failed", "message": str(ex)}, status=500)
 
 @csrf_exempt
 @transaction.atomic
@@ -1225,6 +1288,102 @@ def mock_shipped(request, merchant_trade_no):
         {"message": f"訂單 {merchant_trade_no} 已模擬「貨已送達超商」"},
         status=200,
     )
+
+@csrf_exempt
+def mock_cod_paid(request, merchant_trade_no):
+    """
+    【新增】模擬:顧客到店取貨並付現(demo 用,人工按鈕觸發,取代真實物流/收銀系統通知)。
+    做兩件事,包在同一個 transaction.atomic() 裡,確保一致性(跟 confirm_store 同一套設計):
+    1. 更新 CODPaymentRequest.status → cod_paid
+    2. httpx 通知商城(E_commerce)「這筆 COD 訂單已完成付款」
+       只要通知商城失敗(連線失敗或商城回應非 200),整個 rollback,
+       不會出現「cod_gateway 覺得已付款,商城卻不知道」的資料不一致。
+    """
+    if request.method != "POST":
+        return HttpResponse("method error", status=405)
+
+    try:
+        cod_payment = CODPaymentRequest.objects.get(merchant_trade_no=merchant_trade_no)
+    except CODPaymentRequest.DoesNotExist as e:
+        return _log_and_build_error_response("simulate_cod_paid.not_found", e, status=404)
+    except Exception as e:
+        return _log_and_build_error_response("simulate_cod_paid.db_read_unexpected", e, status=500)
+
+    # 冪等處理:已經付款完成的訂單,重複點擊直接顯示既有結果,不當錯誤處理
+    if cod_payment.status == "cod_paid":
+        logger.info(f"[simulate_cod_paid] 訂單 {merchant_trade_no} 已經是付款完成狀態,直接顯示既有結果")
+        context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
+        return JsonResponse(
+            {"message": f"訂單狀態 cod_paid(目前為 {cod_payment.status}),已略過"},
+            status=200,
+        )
+
+    # 防呆:必須先出貨才能模擬取貨付款,避免狀態機跳步
+    if cod_payment.status != "cod_shipped":
+        logger.warning(
+            f"[mock_cod_paid] 訂單 {merchant_trade_no} 目前狀態是 "
+            f"{cod_payment.status},尚未「貨品未送達超商」,無法模擬取貨付款"
+        )
+        # ================================
+        # 【修改處 D】狀態不符時,改用 messages.error
+        # 並直接回傳 JSON,讓前端 alert 顯示真正原因
+        # (不再 render 模板,因為這支 view 現在的合約是回 JSON)
+        # ================================
+        messages.error(
+            request,
+            f"訂單 {merchant_trade_no} 目前狀態為「{cod_payment.status}」,不是「貨品已送達超商」,已略過此次模擬。"
+        )
+        return JsonResponse(
+            {"message": f"訂單狀態非 cod_shipped(目前為 {cod_payment.status}),已略過"},
+            status=200,
+        )
+
+    try:
+        with transaction.atomic():
+            cod_payment.status = "cod_paid"
+            cod_payment.paid_at = timezone.now()
+            cod_payment.save()
+
+            notify_payload = {
+                "merchant_trade_no": cod_payment.merchant_trade_no,
+                "trade_amt": str(cod_payment.trade_amt),
+                "transaction_id": str(uuid.uuid4()),
+            }
+            notify_payload["check_mac_value"] = generate_check_mac_value(
+                notify_payload, settings.ECPAY_HASH_KEY, settings.ECPAY_HASH_IV
+            )
+            notify_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/cod_payment_confirmed/"
+            logger.info(f"[simulate_cod_paid] 準備通知商城,URL={notify_url}")
+
+            try:
+                response = httpx.post(notify_url, json=notify_payload, timeout=10)
+                logger.info(f"[simulate_cod_paid] 商城回應: status={response.status_code}, body={response.text}")
+            except httpx.HTTPError as e:
+                raise ShopNotifyError(f"連線商城失敗: {type(e).__name__}: {e}") from e
+
+            if response.status_code != 200:
+                raise ShopNotifyError(
+                    f"商城回應非 200: status={response.status_code}, body={response.text}"
+                )
+
+    except ShopNotifyError as e:
+        logger.exception(f"[simulate_cod_paid.notify_shop_failed] 訂單 {merchant_trade_no} 通知商城失敗")
+        return render(request, "cod_error.html", {
+            "error_message": "通知商城付款結果失敗,請稍後再試一次「模擬取貨付款」。",
+            "merchant_trade_no": merchant_trade_no,
+            "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
+        }, status=502)
+    except Exception as e:
+        logger.exception(f"[simulate_cod_paid.db_write_unexpected] 訂單 {merchant_trade_no} 寫入失敗")
+        return render(request, "cod_error.html", {
+            "error_message": "系統發生錯誤,模擬付款失敗,請稍後再試。",
+            "merchant_trade_no": merchant_trade_no,
+            "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL,
+        }, status=500)
+
+    logger.info(f"[simulate_cod_paid] 訂單 {merchant_trade_no} 已模擬「顧客取貨付款」完成")
+    context = {"cod": cod_payment, "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL}
+    return render(request, "cod_info.html", context)
 
 # @csrf_exempt
 # def confirm_store(request):
