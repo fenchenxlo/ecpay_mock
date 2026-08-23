@@ -1266,7 +1266,7 @@ def mock_shipped(request, merchant_trade_no):
         )
 
     try:
-	    with transaction.atomic():
+        with transaction.atomic():
             cod_payment.status = "cod_shipped"
             cod_payment.shipped_at = timezone.now()
             cod_payment.save()
