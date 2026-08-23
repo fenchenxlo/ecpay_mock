@@ -282,7 +282,7 @@ def payment_notify(request):
         "status": data["status"],
 #         "created_at": account.created_at.strftime("%Y-%m-%d %H:%M:%S"),
     }
-    #payload["transaction_id"] = payment.trade_no
+    payload["transaction_id"] = payment.trade_no
     payload["CheckMacValue"] = (
             generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
     )
@@ -315,7 +315,7 @@ def payment_notify(request):
 
             simulate_paid=True
         )
-        payload["transaction_id"] = payment.trade_no
+#        payload["transaction_id"] = payment.trade_no
         
         ### 新增修改：包裹外部 API 發送動作。預防 notify_shop_paid 因網路連線失敗或斷線導致整個 Webhook 崩潰 ###
         try:
@@ -356,7 +356,7 @@ def payment_notify(request):
             simulate_paid=False
         )
         
-        payload["transaction_id"] = payment.trade_no
+#        payload["transaction_id"] = payment.trade_no
         
         ### 新增修改：同樣包裹失敗通知的外部 API，避免連線異常引發 500 錯誤 ###
         try:
