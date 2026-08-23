@@ -156,6 +156,14 @@
             <button type="button" onclick="submitForm('shipped')">模擬貨品已送達超商</button>
         </form>
 		
+		<!-- ================================
+             【新增處 A】模擬:待出貨超商
+             ================================ -->
+        <form id="form-created" method="post" action="">
+            {% csrf_token %}
+            <button type="button" onclick="submitForm('created')">模擬貨品未送達超商</button>
+        </form>
+		
     </div>
 </div>
 
@@ -186,6 +194,11 @@ function submitForm(type) {
     // ================================
     } else if (type === 'shipped') {
         targetUrl = `/cod_gateway/mock_shipped/${encodedNo}/`;
+    // ================================
+    // 【新增處 C】對應 mock_created 的路由
+    // ================================
+    } else if (type === 'created') {
+        targetUrl = `/cod_gateway/mock_created/${encodedNo}/`;
 
     } else {
         console.error('未知的 type:', type);
