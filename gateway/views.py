@@ -381,7 +381,7 @@ def ecpay_gateway_checkout(request):
     模擬綠界建立訂單 API (商城呼叫這個 view)
     - 接收商城送來的訂單資料
     - 在綠界 DB 建立 Order,PaymentRequest
-    - 產生 ATM 虛擬帳號、繳費期限
+    - 通知銀行 建立產生 ATM 虛擬帳號、繳費期限
     - 回傳 HTML form (模擬綠界行為)
     """
 
