@@ -284,7 +284,7 @@ def payment_notify(request):
     }
     payload["transaction_id"] = payment.trade_no
     payload["CheckMacValue"] = (
-            generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
+            generate_check_mac_value(payload,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
     )
     print("payment_notify : payload['CheckMacValue']=",payload["CheckMacValue"])    
     # 付款成功
