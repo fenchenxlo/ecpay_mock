@@ -16,17 +16,28 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from django.http import HttpResponse
-#from django.views.generic import TemplateView   # 加在檔案最上面的 import 區
-from gateway.views import (
-     home,
- )
+from django.views.generic import RedirectView   # 【新增】首頁轉址
 
 urlpatterns = [
-    path('', home, name='home'),
+    # 【新增】進入 127.0.0.1:8001/ 時，自動轉到 COD 查詢 + 模擬付款頁
+    path(
+        "",
+        RedirectView.as_view(
+            pattern_name="cod_gateway:query_and_simulate_cod",
+            permanent=False,
+        ),
+        name="root_redirect",
+    ),
+    # 【新增】進入 127.0.0.1:8001/ 時，自動轉到 COD 查詢 + 模擬付款頁
+    path(
+        "atm/",
+        RedirectView.as_view(
+            pattern_name="gateway:query_and_simulate",
+            permanent=False,
+        ),
+        name="root_redirect",
+    ),
     path("admin/", admin.site.urls),
     path("gateway/", include("gateway.urls")),  # 把 gateway app 的 urls 串進來
-	path("cod_gateway/", include("cod_gateway.urls")),  # 新增
-#    path('', TemplateView.as_view(template_name='home.html'), name='home'),  # 新增：根目錄首頁
-#    path("", lambda request: HttpResponse("ECPay Mock Server OK")),
+    path("cod_gateway/", include("cod_gateway.urls")),  # 把 cod_gateway app 的 urls 串進來
 ]

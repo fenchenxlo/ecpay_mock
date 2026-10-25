@@ -3,21 +3,33 @@ from django.shortcuts import render, get_object_or_404, redirect
 # Create your views here.
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
-import json, uuid, datetime ,random, string, httpx
+import json, uuid, datetime ,random, string, httpx, hmac
 
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest   # 匯入 Django 的回應物件，用來回傳字串或 JSON
 from .models import Order,PaymentRequest, PaymentNotification          # 匯入 Order model，用來更新訂單狀態
 from util.ChkMacVal import generate_check_mac_value
 from django.conf import settings
+from ecpay_mock.settings import ECPAY_HASH_KEY,ECPAY_HASH_IV
 from django.db import transaction, IntegrityError
 from django.apps import apps
 from datetime import timedelta
-from .services import notify_shop_paid, notify_shop_failed
+#from .services import notify_shop_paid, notify_shop_failed
+from .notification_service import notify_shop_paid, notify_shop_failed
 from django.contrib.auth.decorators import user_passes_test
 from django.shortcuts import render
 from django.db import connection
 ### 新增修改：引入 Django 的資料庫找不到資料異常，防止 500 錯誤 ###
 from django.core.exceptions import ObjectDoesNotExist
+from .services.ecpay_service import ECPayService
+# ============================================================
+# 【新增】
+# ECPay Mock Checkout Schema
+# ============================================================
+
+from .schemas.checkout import (
+    ECPayCheckoutSchema,
+)
+
 import logging          # 【新增】
 
 logger = logging.getLogger(__name__)   # 【新增】
@@ -46,6 +58,423 @@ def _log_and_build_error_response(view_name, exception, status=500):
         },
         status=status,
     )
+    
+def home(request):   
+    return render(request, 'home.html')
+
+def is_admin(user):
+    """判斷是否為已登入的管理員(superuser)"""
+    return user.is_authenticated and user.is_superuser
+    
+
+@user_passes_test(is_admin, login_url='/admin/login/')
+def db_query_tool(request):
+    """
+    資料庫查詢工具:
+    流程 —— 使用者先選擇 table,選定後列出該 table 所有欄位,
+    再選擇「兩個」欄位(column1、column2),查詢這兩個欄位
+    「同一列(同一筆資料)」對應的值,例如 order_number 對應 status。
+
+    重點:兩個欄位必須放在同一個 SELECT 裡一起查,才能保證
+    回傳的每一筆 (col1值, col2值) 確實來自同一列資料,
+    而不是像分開查兩次那樣,兩份清單各自篩選、順序對不上。
+    """
+    tables = []          # 所有可查詢的 table 名稱
+    columns = []          # 目前選定 table 的欄位名稱清單
+    rows = []              # 查詢結果,每筆是 (col1值, col2值) 的 tuple
+    error = None           # 查詢過程中若有錯誤,存放錯誤訊息
+
+    table_choice = request.GET.get('table', '')      # 使用者選擇的 table 名稱
+    column1_choice = request.GET.get('column1', '')  # 使用者選擇的第一個欄位
+    column2_choice = request.GET.get('column2', '')  # 使用者選擇的第二個欄位
+
+    with connection.cursor() as cursor:
+        # 1. 取得資料庫中所有「業務用」table
+        #    排除 sqlite 系統表、django 內建表、auth 相關表,避免查到不該看的系統資料
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' "
+            "AND name NOT LIKE 'django_%' "
+            "AND name NOT LIKE 'auth_%';"
+        )
+        tables = [r[0] for r in cursor.fetchall()]
+
+        # 2. 若使用者有選擇 table,且該 table 確實存在於允許清單中
+        #    (白名單檢查,防止使用者從網址列竄改 table 參數)
+        if table_choice and table_choice in tables:
+            # 2-1. 取得該 table 的所有欄位名稱(給使用者選擇用)
+            cursor.execute(f"PRAGMA table_info({table_choice});")
+            columns = [r[1] for r in cursor.fetchall()]
+
+            # 3. 兩個欄位都要有選,且都存在於這個 table 的欄位清單中(白名單檢查),
+            #    且不能選成同一個欄位(對應兩個一樣的東西沒有意義)
+            if (column1_choice and column2_choice
+                    and column1_choice in columns
+                    and column2_choice in columns
+                    and column1_choice != column2_choice):
+                try:
+                    # 3-1. 關鍵修改:col1、col2 放在同一個 SELECT 裡一起撈,
+                    #      確保同一列回傳的兩個值是「同一筆資料」的對應值。
+                    #      table_choice / column1_choice / column2_choice
+                    #      都已經過白名單檢查,用 f-string 組 SQL 是安全的。
+                    #      加上 ORDER BY rowid,確保每次查詢順序固定一致。
+                    query = (
+                        f"SELECT {column1_choice}, {column2_choice} "
+                        f"FROM {table_choice} "
+                        f"WHERE {column1_choice} IS NOT NULL "
+                        f"AND {column2_choice} IS NOT NULL "
+                        f"ORDER BY rowid;"
+                    )
+                    cursor.execute(query)
+                    # 直接存成 tuple list:[(col1值, col2值), (col1值, col2值), ...]
+                    rows = [(r[0], r[1]) for r in cursor.fetchall()]
+                except Exception as e:
+                    # 查詢過程中若發生錯誤(例如欄位型別問題),記錄錯誤訊息
+                    error = str(e)
+
+    context = {
+        'tables': tables,
+        'columns': columns,
+        'rows': rows,
+        'error': error,
+        'table_choice': table_choice,
+        'column1_choice': column1_choice,
+        'column2_choice': column2_choice,
+    }
+    return render(request, 'admin_tools/db_query.html', context)
+
+@csrf_exempt
+@user_passes_test(is_admin, login_url='/admin/login/')
+def query_and_simulate(request):
+    """
+    合併頁面:左側是 SQL 查詢工具(選 table -> 選欄位 -> 顯示該欄位所有非空值),
+    右側是模擬銀行付款工具(手動輸入綠界交易編號,模擬「已收款」或「未收款」)。
+
+    這是獨立的新頁面,跟原本的 db_query_tool 互不影響、互不共用邏輯,
+    方便未來要單獨修改其中一個功能時,不會動到另一個。
+    """
+    tables = []
+    columns = []
+    rows = []
+    error = None
+    table_choice = request.GET.get('table', '')
+    column_choice = request.GET.get('column', '')
+
+    with connection.cursor() as cursor:
+        # 1. 取得所有「業務用」table(排除系統表、django 內建表、auth 相關表)
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' "
+            "AND name NOT LIKE 'django_%' "
+            "AND name NOT LIKE 'auth_%';"
+        )
+        tables = [r[0] for r in cursor.fetchall()]
+
+        # 2. 選了 table 且通過白名單檢查後,取得該 table 的所有欄位
+        if table_choice and table_choice in tables:
+            cursor.execute(f"PRAGMA table_info({table_choice});")
+            columns = [r[1] for r in cursor.fetchall()]
+
+            # 3. 選了欄位且通過白名單檢查後,查詢該欄位不為空的所有值
+            if column_choice and column_choice in columns:
+                try:
+                    query = (
+                        f"SELECT {column_choice} FROM {table_choice} "
+                        f"WHERE {column_choice} IS NOT NULL;"
+                    )
+                    cursor.execute(query)
+                    rows = [{column_choice: r[0]} for r in cursor.fetchall()]
+                except Exception as e:
+                    error = str(e)
+
+    context = {
+        'tables': tables,
+        'columns': columns,
+        'rows': rows,
+        'error': error,
+        'table_choice': table_choice,
+        'column_choice': column_choice,
+    }
+    return render(request, 'admin_tools/query_simulate.html', context)
+
+# ============================================================
+# 【新增】
+# ECPay Checkout Schema 驗證
+# ============================================================
+
+def _validate_checkout_schema(
+    data: dict,
+) -> ECPayCheckoutSchema:
+    """
+    【新增】
+
+    將 HTTP JSON data 轉換成
+    ECPayCheckoutSchema。
+
+    ============================================================
+    注意
+    ============================================================
+
+    CheckMacValue 必須先在 View Boundary 驗證完成。
+
+    正確順序：
+
+        JSON
+          ↓
+        CheckMacValue
+          ↓
+        Schema
+          ↓
+        Service
+
+    Schema 不負責 CheckMacValue 驗證。
+    """
+
+    if not isinstance(
+        data,
+        dict,
+    ):
+        raise ValueError(
+            "Checkout Request 必須是 object"
+        )
+
+    try:
+
+        return ECPayCheckoutSchema(
+            **data
+        )
+
+    except Exception as exc:
+
+        logger.warning(
+            "ECPayCheckoutSchema 驗證失敗: %s",
+            str(exc),
+        )
+
+        raise ValueError(
+            f"Checkout 資料驗證失敗: {exc}"
+        ) from exc
+
+# ============================================================
+# 【新增】
+# JSON Request Parser
+# ============================================================
+
+def _parse_json_request(
+    request,
+) -> dict:
+    """
+    【新增】
+
+    只負責解析 HTTP Request。
+
+    不負責：
+        ORM
+        HTTPX
+        業務邏輯
+        ATM 建立
+    """
+
+    if not request.body:
+        raise ValueError(
+            "Request body 不可為空"
+        )
+
+    try:
+
+        data = json.loads(
+            request.body.decode("utf-8")
+        )
+
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
+
+        raise ValueError(
+            "Request body 必須是合法 JSON"
+        ) from exc
+
+    if not isinstance(
+        data,
+        dict,
+    ):
+        raise ValueError(
+            "JSON 根節點必須是 object"
+        )
+
+    return data
+
+# ============================================================
+# 【新增】
+# CheckMacValue 驗證
+# ============================================================
+
+def _verify_check_mac_value(
+    data: dict,
+) -> str:
+    """
+    【新增】
+
+    Ecpay Mock View 的 Request Boundary MAC 驗證。
+
+    正確流程：
+
+        E_commerce
+             ↓
+        HTTP Request
+             ↓
+        View
+             ↓
+        CheckMacValue 驗證
+             ↓
+        ECPayService
+
+    因此 CheckMacValue 驗證必須在 Service 之前完成。
+
+    注意：
+
+    這裡只驗證「E_commerce → Ecpay Mock」
+    這一段的 CheckMacValue。
+
+    Ecpay Mock → Bank Mock 的 CheckMacValue，
+    由 ECPayMockAdapter 重新產生。
+    """
+
+    if not isinstance(
+        data,
+        dict,
+    ):
+        raise ValueError(
+            "CheckMacValue 驗證資料格式錯誤"
+        )
+
+    incoming_check_mac = data.get(
+        "CheckMacValue"
+    )
+
+    if not incoming_check_mac:
+        raise ValueError(
+            "缺少 CheckMacValue"
+        )
+
+    hash_key = getattr(
+        settings,
+        "ECPAY_HASH_KEY",
+        "",
+    )
+
+    hash_iv = getattr(
+        settings,
+        "ECPAY_HASH_IV",
+        "",
+    )
+
+    if not hash_key or not hash_iv:
+        raise RuntimeError(
+            "ECPAY_HASH_KEY / ECPAY_HASH_IV 未設定"
+        )
+
+    # --------------------------------------------------------
+    # 【新增】
+    #
+    # 驗證 MAC 時：
+    #
+    #   CheckMacValue 本身不能再次參與計算。
+    #
+    # 因此只建立 copy，
+    # 不修改原始 request_data。
+    # --------------------------------------------------------
+
+    verify_data = dict(
+        data
+    )
+
+    verify_data.pop(
+        "CheckMacValue",
+        None,
+    )
+
+    try:
+
+        expected_check_mac = (
+            generate_check_mac_value(
+                verify_data,
+                hash_key,
+                hash_iv,
+            )
+        )
+
+    except Exception as exc:
+
+        logger.exception(
+            "CheckMacValue 計算失敗"
+        )
+
+        raise RuntimeError(
+            "CheckMacValue 驗證處理失敗"
+        ) from exc
+
+    # --------------------------------------------------------
+    # 【新增】
+    #
+    # compare_digest 避免直接使用：
+    #
+    #     expected == incoming
+    #
+    # --------------------------------------------------------
+
+    if not hmac.compare_digest(
+        str(expected_check_mac).upper(),
+        str(incoming_check_mac).upper(),
+    ):
+        raise ValueError(
+            "CheckMacValue 驗證失敗"
+        )
+
+    return str(
+        incoming_check_mac
+    )
+
+# ============================================================
+# 【修改】
+# ECPayService Dependency Injection
+# ============================================================
+
+def get_ecpay_service():
+    """
+    【修改】
+
+    View 不自行建立業務流程。
+
+    View 只取得 Service。
+
+    正式架構：
+
+        View
+          ↓
+        ECPayService
+          ↓
+        ECPayGateway
+          ↓
+        ECPayMockAdapter
+          ↓ HTTPX
+        Bank Mock
+    """
+
+    try:
+
+        return ECPayService()
+
+    except Exception as exc:
+
+        logger.exception(
+            "取得 ECPayService 失敗"
+        )
+
+        raise RuntimeError(
+            "ECPayService 初始化失敗"
+        ) from exc
 	
 def home(request):   
     return render(request, 'home.html')
@@ -218,155 +647,261 @@ def notify_bank(payment_data):
     })
 
 
-## payment_notify
-## 銀行mock call 綠界mock
+# ============================================================
+# 【修改】
+# Bank Mock → Ecpay Mock
+# /gateway/payment_notify/
+# ============================================================
+
 @csrf_exempt
-@transaction.atomic
-def payment_notify(request):
+def payment_notify(
+    request,
+):
+    """
+    【修改】
 
-### 新增修改：加入 try-except 機制，防止 request.body 不是合法 JSON 時引發崩潰 ###
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, TypeError):
-        return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
-		
-    print("payment_notify data: ",data)
+    Bank Mock → Ecpay Mock 的 ATM 付款結果 Callback。
 
-### 新增修改：改用 .pop(key, default) 方式取值。若對方沒傳 CheckMacValue，會拿到 None 而不是直接噴 500 KeyError ###
-    recv_mac = data.pop("CheckMacValue", None)
-    if not recv_mac:
-        return JsonResponse({"status": "error", "message": "Missing CheckMacValue"}, status=400)
-    logger.info(f"recv_mac={recv_mac}")
-    local_mac = (
-        generate_check_mac_value(data,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
+    ============================================================
+    流程
+    ============================================================
+
+    Bank Mock
+        │
+        │ HTTPX POST
+        ▼
+    payment_notify()
+        │
+        ├── JSON parsing
+        │
+        ├── CheckMacValue verification
+        │
+        ▼
+    ECPayService
+        │
+        ├── PaymentRequest
+        ├── PaymentNotification
+        │
+        ▼
+    StorePaymentGateway
+        │
+        ▼
+    StorePaymentAdapter
+        │
+        │ HTTPX
+        ▼
+    E_commerce
+
+    ============================================================
+    View 禁止
+    ============================================================
+
+    1. 不使用 Django ORM
+    2. 不使用 httpx
+    3. 不建立 PaymentRequest
+    4. 不建立 PaymentNotification
+    5. 不更新 PaymentRequest
+    6. 不呼叫 E_commerce
+    7. 不判斷 paid / failed 商業邏輯
+    """
+
+    view_name = (
+        "payment_notify"
     )
-    logger.info(f"local_mac={local_mac}")
-    if recv_mac != local_mac:
 
-        return JsonResponse({
+    # ========================================================
+    # 【新增】
+    # HTTP Method Boundary
+    # ========================================================
 
-            "status":"error",
+    if request.method != "POST":
 
-            "message":"CheckMacValue Error"
+        return JsonResponse(
+            {
+                "status": False,
+                "error": "MethodNotAllowed",
+                "message": (
+                    "只接受 POST Request"
+                ),
+                "view": view_name,
+            },
+            status=405,
+        )
 
-        }, status=400)
-
-    ### 新增修改：檢查 data 內是否缺少後續邏輯必填的鍵值，防止後面 data["key"] 噴 KeyError ###
-    required_keys = ["merchant_trade_no", "trade_amt", "bank_code", "v_account", "expire_date", "status"]
-    if not all(key in data for key in required_keys):
-        return JsonResponse({"status": "error", "message": "Missing required fields"}, status=400)
-		
-### 新增修改：包裹 try-except。當資料庫找不到該訂單或付款請求時，回傳 404，而不是直接系統崩潰噴 500 ###
     try:
-        order = (
-            Order.objects.get(
-                order_number=
-                data["merchant_trade_no"]
+
+        # ====================================================
+        # 【保留】
+        # 解析 JSON
+        # ====================================================
+
+        # ====================================================
+        # 【修改】
+        # Request Parse
+        #
+        # Browser → Ecpay Mock 現在使用：
+        #
+        #     application/x-www-form-urlencoded
+        #
+        # 因此必須優先支援 request.POST。
+        #
+        # 同時保留 JSON 支援，
+        # 避免其他 Server-to-Server 呼叫被破壞。
+        # ====================================================
+
+        if request.POST:
+
+            data = request.POST.dict()
+
+        else:
+
+            data = _parse_json_request(
+                request
+            )
+
+
+        # ====================================================
+        # 【保留】
+        #
+        # Bank Mock → Ecpay Mock
+        # 的 MAC 必須在 Service 前驗證。
+        # ====================================================
+
+        incoming_check_mac = (
+            _verify_check_mac_value(
+                data
             )
         )
-        payment = (
-            PaymentRequest.objects.get(
-                merchant_trade_no=
-                data["merchant_trade_no"]
+
+        # ====================================================
+        # 【新增】
+        #
+        # 保留原始 MAC，
+        # 供後續 PaymentNotification /
+        # ECPay Mock 業務需要。
+        # ====================================================
+
+        data[
+            "CheckMacValue"
+        ] = incoming_check_mac
+
+        # ====================================================
+        # 【新增】
+        # 基本 callback 欄位
+        # ====================================================
+
+        if not data.get(
+            "merchant_trade_no"
+        ):
+
+            raise ValueError(
+                "付款通知缺少 merchant_trade_no"
+            )
+
+        if data.get(
+            "trade_amt"
+        ) in (
+            None,
+            "",
+        ):
+
+            raise ValueError(
+                "付款通知缺少 trade_amt"
+            )
+
+        # ====================================================
+        # 【保留】
+        #
+        # View 只把 request data 交給 Service。
+        # ====================================================
+
+        service = get_ecpay_service()
+
+        result = (
+            service
+            .process_payment_notification(
+                request_data=data,
             )
         )
-    except ObjectDoesNotExist:
-        return JsonResponse({"status": "error", "message": "Order or Payment record not found"}, status=404)
-    
-    payload = {
-        "merchant_trade_no": data["merchant_trade_no"],
-        "trade_amt": int(data["trade_amt"]),
-        "bank_code": data["bank_code"],
-        "v_account": data["v_account"],
-        "expire_date": data["expire_date"],
-        "status": data["status"],
-#         "created_at": account.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    payload["transaction_id"] = payment.trade_no
-    payload["CheckMacValue"] = (
-            generate_check_mac_value(payload,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
-    )
-    print("payment_notify : payload['CheckMacValue']=",payload["CheckMacValue"])    
-    # 付款成功
-    if data["status"] == "paid":
-        order.status = "paid"
-        order.save()
-        
-        payment.status = "atm_paid"
-        payment.save()
 
-        PaymentNotification.objects.create(
+        # ====================================================
+        # 【新增】
+        # Service 完成後轉 HTTP Response
+        # ====================================================
 
-            merchant_trade_no=payment.merchant_trade_no,
-
-            trade_no=payment.trade_no,
-
-            trade_amt=payment.trade_amt,
-
-            payment_date=timezone.now(),
-
-            choose_payment="ATM",
-
-            payment_type="aio",
-
-            rtn_code=1,
-
-            rtn_msg="付款成功",
-
-            simulate_paid=True
+        return JsonResponse(
+            result,
+            status=200,
         )
-#        payload["transaction_id"] = payment.trade_no
-        
-        ### 新增修改：包裹外部 API 發送動作。預防 notify_shop_paid 因網路連線失敗或斷線導致整個 Webhook 崩潰 ###
-        try:
-            res = notify_shop_paid(payload)
-            if res.status_code == 200:
-                return JsonResponse({"status": "success"})
-            else:
-                return JsonResponse({"status": "failed"})
-        except Exception as e:
-            logger.exception(f"[Exception]-notify_shop_paid : {e} ")
-            return JsonResponse({"status": "failed", "message": "Shop notification failed"}, status=502)
-# 付款失敗
-    else:
-        order.status = "failed"
-        order.save()
-        
-        payment.status = "atm_failed"
-        payment.save()
 
-        PaymentNotification.objects.create(
+    except ValueError as exc:
 
-            merchant_trade_no=payment.merchant_trade_no,
+        # ====================================================
+        # 【新增】
+        # Callback 資料錯誤
+        # ====================================================
 
-            trade_no=payment.trade_no,
-
-            trade_amt=payment.trade_amt,
-
-            payment_date=timezone.now(),
-
-            choose_payment="ATM",
-
-            payment_type="aio",
-
-            rtn_code=0,
-
-            rtn_msg="付款失敗",
-
-            simulate_paid=False
+        logger.warning(
+            "%s | Callback validation failed: %s",
+            view_name,
+            str(exc),
         )
-        
-#        payload["transaction_id"] = payment.trade_no
-        
-        ### 新增修改：同樣包裹失敗通知的外部 API，避免連線異常引發 500 錯誤 ###
-        try:
-            res = notify_shop_failed(payload)
-            if res.status_code == 200:
-                return JsonResponse({"status": "success"})
-            else:
-                return JsonResponse({"status": "failed"})
-        except Exception:
-            return JsonResponse({"status": "failed", "message": "Shop notification failed"}, status=502)
+
+        return JsonResponse(
+            {
+                "status": False,
+                "error": "BadRequest",
+                "message": str(exc),
+                "view": view_name,
+            },
+            status=400,
+        )
+
+    except RuntimeError as exc:
+
+        # ====================================================
+        # 【新增】
+        # Service / Repository / Gateway / Adapter 錯誤
+        # ====================================================
+
+        logger.exception(
+            "%s | Callback processing failed",
+            view_name,
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "error": "CallbackError",
+                "message": str(exc),
+                "view": view_name,
+            },
+            status=500,
+        )
+
+    except Exception:
+
+        # ====================================================
+        # 【保留】
+        # 最後安全邊界
+        # ====================================================
+
+        logger.exception(
+            "%s | Unexpected callback error",
+            view_name,
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "error": "ServerError",
+                "message": (
+                    "付款通知處理發生未預期錯誤"
+                ),
+                "view": view_name,
+            },
+            status=500,
+        )
 
 
 @csrf_exempt
@@ -374,185 +909,1196 @@ def payment_info(request):
     return redirect('payment_info',{'HF_SPACE_E_COMMERCE_URL': settings.HF_SPACE_E_COMMERCE_URL})
 
 # 建立 ATM 訂單 ,及顯示ATM資訊頁面, 並通知銀行端
+# @csrf_exempt
+# @transaction.atomic
+# def ecpay_gateway_checkout(request):
+    # """
+    # 模擬綠界建立訂單 API (商城呼叫這個 view)
+    # - 接收商城送來的訂單資料
+    # - 在綠界 DB 建立 Order,PaymentRequest
+    # - 通知銀行 建立產生 ATM 虛擬帳號、繳費期限
+    # - 回傳 HTML form (模擬綠界行為)
+    # """
+
+    # if request.method != "POST":
+        # return HttpResponse("method error")
+
+    # try:
+# #         if request.content_type == "application/json":
+# #             payment_data = json.loads(request.body.decode("utf-8"))
+            
+        # payment_data = request.POST.dict() if request.POST else request.body
+            # # 如果商城端用 JSON 傳送
+        # if isinstance(payment_data, (bytes, bytearray)):
+            # payment_data = json.loads(payment_data.decode("utf-8"))
+# #            payment_data  = json.loads(request.body.decode("utf-8"))
+    # except json.JSONDecodeError:
+        # return HttpResponseBadRequest("JSON 格式錯誤")
+# #    payment_data = request.POST.dict()
+    
+
+    # received_mac = payment_data.pop("check_mac_value","")
+
+    # expected_mac = generate_check_mac_value(
+        # payment_data,
+        # settings.ECPAY_HASH_KEY,
+        # settings.ECPAY_HASH_IV
+    # )
+    
+# #     print("received_mac =", received_mac)
+# #     print("expected_mac =", expected_mac)
+# #     print("payment_data =", payment_data)
+
+# #     merchant_trade_date = timezone.localtime().strftime("%Y-%m-%d %H:%M:%S")
+    # merchant_trade_date = payment_data.get("merchant_trade_date")
+
+    # if received_mac != expected_mac:
+        # return HttpResponse(
+            # "CheckMacValue Error",
+            # status=400
+        # )
+# #     print("payment_data: " ,payment_data)
+    # merchant_trade_no = payment_data.get("merchant_trade_no") # 訂單編號
+    # print("merchant_trade_no: ",merchant_trade_no)
+    
+    # payment_data["check_mac_value"] = received_mac
+# #    payment_data["status"] = "atm_created"
+    # # 通知銀行建立虛擬帳號
+# #    bank_result = notify_bank(payment_data)
+    
+    # bank_response = notify_bank(payment_data)
+
+    # bank_result = json.loads(bank_response.content)
+    # print("bank_result =", bank_result)
+    # print("type =", type(bank_result))
+
+    # logger.info(f"bank_result = {bank_result}")
+    # logger.info(f"type = {type(bank_result)}")  
+    
+    # if bank_result["status"] == False:
+        # error_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/"
+# #        print("redirect to error_url =", error_url)   # 先加這行確認實際值
+        # return redirect(error_url)        
+# #             return redirect(f'{HF_SPACE_E_COMMERCE_UR}/commerce_shop/purchased_products/')
+# #             return JsonResponse({
+# #                 "tags":"error",
+# #                 "messages": ["銀行通知失敗: VirtualAccount取得或建立失敗"],
+# #             })
+# #             return HttpResponse(
+# #                 "銀行通知失敗: VirtualAccount取得或建立失敗",
+# #                 status=400
+# #             )
+    # bank_code = bank_result["bank_code"]
+    # v_account = bank_result["v_account"]
+    # expire_date = bank_result["expire_date"]
+
+    # with transaction.atomic():
+        
+        # order_obj, create = Order.objects.get_or_create(
+            # order_number=merchant_trade_no,
+            # defaults={
+                # 'user_id': payment_data["user_id"],
+                # 'receiver_name': payment_data["receiver_name"] or "王大明",
+                # 'amount': payment_data["trade_amt"],
+                # 'status': payment_data["status"],
+            # }
+        # )
+
+        
+        # payment_request, created = PaymentRequest.objects.get_or_create(
+            # merchant_trade_no=merchant_trade_no,  # 查找條件
+            # defaults={
+                # 'merchant_id': payment_data.get("merchant_id", "shop1234"),
+                # 'merchant_trade_date': merchant_trade_date,
+                # 'trade_amt': payment_data.get("trade_amt"),
+                # 'trade_desc': payment_data.get("trade_desc", "商品交易"),
+                # 'item_name': payment_data.get("item_name"),
+                # 'choose_payment': payment_data.get("choose_payment", "ATM"),
+                # 'payment_type': payment_data.get("payment_type", "aio"),
+                # 'trade_no': payment_data.get("transaction_id"),
+                # 'status': "atm_created",
+                # 'return_url': payment_data.get("ReturnURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/ecpay_mock_notify/"),
+                # 'payment_info_url': payment_data.get("PaymentInfoUrl", f"{settings.HF_SPACE_ECPAY_MOCK_URL}/gateway/payment_info/"),
+                # 'order_result_url': payment_data.get("OrderResultURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_ok/"),
+                # 'check_mac_value': received_mac,
+                # 'bank_code': bank_code, # 國泰世華銀行代碼
+                # 'v_account': v_account, # 虛擬帳戶
+                # 'expire_date': expire_date,
+# #                'response_data': bank_result,
+            # }
+        # )
+    
+    # # ==========================================
+    # # ③ 通知 ecommerce_shop
+    # # ==========================================
+
+    # shop_result = notify_shop(bank_result)
+
+    # logger.info(f"shop_result = {shop_result}")
+
+    # if not shop_result.get("status"):
+        # error_url = (
+            # f"{settings.HF_SPACE_E_COMMERCE_URL}"
+            # f"/commerce_shop/payment_error/"
+        # )
+        # return redirect(error_url)
+    # # bank_code = payment_request.bank_code
+    # # v_account = payment_request.v_account
+    # # expire_date = payment_request.expire_date
+    
+    # # if bank_code == None and v_account == None:
+        # # # 產生 ATM 虛擬帳號
+        # # bank_code = payment_request.bank_code = bank_code = "013"  # 國泰世華
+        # # v_account = payment_request.v_account = f"{bank_code}{random.randint(100000000000,999999999999)}"
+        # # expire_date = payment_request.expire_date = (datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
+
+# #     print("bank_code:", bank_code)
+# #     print("v_account:", v_account)
+# #     print("expire_date:", expire_date)
+    # content_js = {
+        # 'merchant_id': payment_data.get("merchant_id", "shop1234"),
+        # 'merchant_trade_no': merchant_trade_no,
+        # 'merchant_trade_date': merchant_trade_date,
+        # 'user_id': payment_data["user_id"],
+        # 'trade_amt': payment_data["trade_amt"],
+        # 'trade_desc': payment_data["trade_desc"],
+        # 'item_name': payment_data["item_name"],
+        # 'choose_payment': payment_data["choose_payment"],
+        # 'payment_type': payment_data["payment_type"],
+        # 'trade_no': payment_data["transaction_id"],
+        # 'return_url': payment_data["ReturnURL"],
+        # 'payment_info_url': payment_data["PaymentInfoUrl"],
+        # 'order_result_url': payment_data["OrderResultURL"],
+        # 'bank_code': bank_code,
+        # 'v_account': v_account,
+        # 'expire_date': expire_date,
+        # 'status': "atm_created",
+		# 'response_data': shop_result,
+    # }
+    # content_js["check_mac_value"] = generate_check_mac_value(content_js,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
+    
+# #     content_js = json.dumps(content_js, ensure_ascii=False)
+    # print("content_js: ",content_js)
+# #     content = {'content_js': content_js}
+    # content = {
+        # "content_js_dict": content_js,  # 原始 dict，給模板顯示用
+        # "content_js_json": json.dumps(content_js, ensure_ascii=False, default=str),  # JSON 字串，給 JS 用
+        # "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL
+    # }
+    # logger.info(f"content: {content}")
+    # return render(request, "atm_info.html", content)
+
+
+# ============================================================
+# 【保留】
+# E_commerce → Ecpay Mock
+# 正式 ATM 建立入口窗口  OLD 版本
+# ============================================================
+
+# @csrf_exempt
+# def ecpay_gateway_checkout(
+#     request,
+# ):
+#     """
+#     【修改】
+# 
+#     E_commerce → Ecpay Mock 的正式 ATM 建立入口。
+# 
+#     ============================================================
+#     正式流程
+#     ============================================================
+# 
+#     E_commerce
+#         │
+#         │ HTTPX POST
+#         ▼
+#     /gateway/ecpay_gateway_checkout/
+#         │
+#         ▼
+#     View
+#         │
+#         ├── ① HTTP Method
+#         │
+#         ├── ② JSON Parsing
+#         │
+#         ├── ③ CheckMacValue 驗證
+#         │
+#         ├── ④ ECPayCheckoutSchema
+#         │
+#         ▼
+#     ECPayService
+#         │
+#         ▼
+#     ECPayGateway
+#         │
+#         ▼
+#     ECPayMockAdapter
+#         │
+#         │ HTTPX
+#         ▼
+#     Bank_Mock
+#         │
+#         ▼
+#     bank_code
+#     v_account
+#     expire_date
+# 
+#     ============================================================
+#     View 禁止
+#     ============================================================
+# 
+#     1. 不使用 Django ORM
+#     2. 不使用 httpx
+#     3. 不建立 PaymentRequest
+#     4. 不建立 PaymentNotification
+#     5. 不產生 bank_code
+#     6. 不產生 v_account
+#     7. 不產生 expire_date
+#     8. 不呼叫 Bank Mock
+#     9. 不處理付款商業邏輯
+#     """
+# 
+#     view_name = (
+#         "ecpay_gateway_checkout"
+#     )
+# 
+#     # ========================================================
+#     # 【保留】
+#     # HTTP Method Boundary
+#     # ========================================================
+# 
+#     if request.method != "POST":
+# 
+#         return JsonResponse(
+#             {
+#                 "status": False,
+#                 "error": "MethodNotAllowed",
+#                 "message": (
+#                     "只接受 POST Request"
+#                 ),
+#                 "view": view_name,
+#             },
+#             status=405,
+#         )
+# 
+#     try:
+# 
+#         # ====================================================
+#         # 【保留】
+#         # ① 解析 JSON
+#         # ====================================================
+# 
+#         data = _parse_json_request(
+#             request
+#         )
+# 
+#         # ====================================================
+#         # 【保留】
+#         #
+#         # ② CheckMacValue 驗證
+#         #
+#         # 注意：
+#         #
+#         # 必須先驗 MAC，
+#         # 再進入 Schema / Service。
+#         # ====================================================
+# 
+#         incoming_check_mac = (
+#             _verify_check_mac_value(
+#                 data
+#             )
+#         )
+# 
+#         # ====================================================
+#         # 【保留】
+#         #
+#         # 保存 E_commerce → Ecpay Mock
+#         # 的原始 CheckMacValue。
+#         #
+#         # 這個值後面可以保存到
+#         # ECPay Mock PaymentRequest。
+#         #
+#         # 注意：
+#         #
+#         # 它不能拿去直接當成
+#         # Ecpay Mock → Bank Mock 的 MAC。
+#         # ====================================================
+# 
+#         data[
+#             "CheckMacValue"
+#         ] = incoming_check_mac
+# 
+#         # ====================================================
+#         # 【修改】
+#         #
+#         # ③ 進入 ECPayCheckoutSchema
+#         #
+#         # 不再由 View 手動逐欄位驗證：
+#         #
+#         #     merchant_trade_no
+#         #     trade_amt
+#         #     choose_payment
+#         #
+#         # 這些責任改交給 Schema。
+#         # ====================================================
+# 
+#         checkout_schema = (
+#             _validate_checkout_schema(
+#                 data
+#             )
+#         )
+# 
+#         # ====================================================
+#         # 【新增】
+#         #
+#         # ④ Schema → Service Data
+#         #
+#         # Pydantic Schema 不直接傳給 Service，
+#         # 轉成一般 dict。
+#         #
+#         # model_dump() 會保留：
+#         #
+#         #     Decimal
+#         #     datetime
+#         #
+#         # 讓 Service 可以繼續處理。
+#         # ====================================================
+# 
+#         service_data = (
+#             checkout_schema.model_dump(
+#                 mode="python"
+#             )
+#         )
+# 
+#         # ====================================================
+#         # 【新增】
+#         #
+#         # 明確保留原始 CheckMacValue。
+#         #
+#         # Schema 會驗證它是合法字串，
+#         # 但這裡再明確指定一次，
+#         # 避免日後 Schema 欄位處理方式變更時遺失。
+#         # ====================================================
+# 
+#         service_data[
+#             "CheckMacValue"
+#         ] = incoming_check_mac
+# 
+#         # ====================================================
+#         # 【保留】
+#         #
+#         # ⑤ 取得 ECPayService
+#         #
+#         # View 不直接操作 Gateway / Adapter。
+#         # ====================================================
+# 
+#         service = get_ecpay_service()
+# 
+#         # ====================================================
+#         # 【保留】
+#         #
+#         # ⑥ Service 執行 ATM 建立。
+#         #
+#         # View 到這裡就不再處理 ATM 業務。
+#         # ====================================================
+# 
+#         result = (
+#             service.create_atm_payment(
+#                 request_data=service_data,
+#             )
+#         )
+# 
+#         # ====================================================
+#         # 【保留】
+#         #
+#         # ⑦ Service 完成後，
+#         # View 只負責轉換成 HTTP Response。
+#         # ====================================================
+# 
+#         return JsonResponse(
+#             result,
+#             status=200,
+#         )
+# 
+#     except ValueError as exc:
+# 
+#         # ====================================================
+#         # 【新增】
+#         #
+#         # Client Request / Schema /
+#         # CheckMacValue Validation Error
+#         # ====================================================
+# 
+#         logger.warning(
+#             "%s | Request validation failed: %s",
+#             view_name,
+#             str(exc),
+#         )
+# 
+#         return JsonResponse(
+#             {
+#                 "status": False,
+#                 "error": "BadRequest",
+#                 "message": str(exc),
+#                 "view": view_name,
+#             },
+#             status=400,
+#         )
+# 
+#     except RuntimeError as exc:
+# 
+#         # ====================================================
+#         # 【新增】
+#         #
+#         # Service / Repository /
+#         # Gateway / Adapter Error
+#         # ====================================================
+# 
+#         logger.exception(
+#             "%s | Service processing failed",
+#             view_name,
+#         )
+# 
+#         return JsonResponse(
+#             {
+#                 "status": False,
+#                 "error": "ServiceError",
+#                 "message": str(exc),
+#                 "view": view_name,
+#             },
+#             status=500,
+#         )
+# 
+#     except Exception:
+# 
+#         # ====================================================
+#         # 【保留】
+#         #
+#         # 最後一道安全邊界。
+#         # 不把內部例外細節直接回傳給外部。
+#         # ====================================================
+# 
+#         logger.exception(
+#             "%s | Unexpected error",
+#             view_name,
+#         )
+# 
+#         return JsonResponse(
+#             {
+#                 "status": False,
+#                 "error": "ServerError",
+#                 "message": (
+#                     "ECPay ATM 建立發生未預期錯誤"
+#                 ),
+#                 "view": view_name,
+#             },
+#             status=500,
+#         )
+
+
+# ============================================================
+# 【新增】
+# E_commerce → Ecpay Mock
+# 建立 ATM 訂單並顯示 ATM 資訊 1
+# ============================================================
+
 @csrf_exempt
-@transaction.atomic
 def ecpay_gateway_checkout(request):
     """
-    模擬綠界建立訂單 API (商城呼叫這個 view)
-    - 接收商城送來的訂單資料
-    - 在綠界 DB 建立 Order,PaymentRequest
-    - 通知銀行 建立產生 ATM 虛擬帳號、繳費期限
-    - 回傳 HTML form (模擬綠界行為)
+    【新增】
+
+    E_commerce → Ecpay Mock 的 ATM Checkout Endpoint。
+
+    View 只負責：
+
+        1. HTTP Method
+        2. Request Parse
+        3. CheckMacValue Verify
+        4. 呼叫 ECPayService.create_atm_payment()
+        5. 將 Service 回傳的 ATM 資訊交給 atm_info.html
+
+    View 不負責：
+
+        ❌ Django ORM
+        ❌ PaymentRequest 建立
+        ❌ PaymentNotification 建立
+        ❌ Order 處理
+        ❌ ATM 虛擬帳號產生
+        ❌ Bank Mock 呼叫
+        ❌ httpx.post()
+        ❌ Payment business logic
+
+    正式流程：
+
+        E_commerce
+             ↓ HTTPX
+        ecpay_gateway_checkout()
+             ↓
+        CheckMacValue Verify
+             ↓
+        ECPayService
+             ↓
+        ECPayMockAdapter
+             ↓ HTTPX
+        Bank Mock
+             ↓
+        ATM 資訊
+             ↓
+        ECPayService
+             ↓
+        atm_info.html
     """
 
+    view_name = "ecpay_gateway_checkout"
+
+    # ========================================================
+    # 【新增】
+    # HTTP Method Boundary
+    # ========================================================
+
     if request.method != "POST":
-        return HttpResponse("method error")
+
+        return JsonResponse(
+            {
+                "status": False,
+                "error": "MethodNotAllowed",
+                "message": "只接受 POST Request",
+                "view": view_name,
+            },
+            status=405,
+        )
 
     try:
-#         if request.content_type == "application/json":
-#             payment_data = json.loads(request.body.decode("utf-8"))
-            
-        payment_data = request.POST.dict() if request.POST else request.body
-            # 如果商城端用 JSON 傳送
-        if isinstance(payment_data, (bytes, bytearray)):
-            payment_data = json.loads(payment_data.decode("utf-8"))
-#            payment_data  = json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return HttpResponseBadRequest("JSON 格式錯誤")
-#    payment_data = request.POST.dict()
-    
 
-    received_mac = payment_data.pop("check_mac_value","")
+        # ====================================================
+        # 【新增】
+        # Request Parse
+        # ====================================================
 
-    expected_mac = generate_check_mac_value(
-        payment_data,
-        settings.ECPAY_HASH_KEY,
-        settings.ECPAY_HASH_IV
+        # ====================================================
+        # 【修改】
+        # Request Parse
+        #
+        # Browser → Ecpay Mock 現在使用：
+        #
+        #     HTML Form POST
+        #
+        # 所以 request.POST 才是主要資料來源。
+        #
+        # 同時保留 JSON 支援，
+        # 讓其他 Server-to-Server 呼叫仍然可以使用 JSON。
+        # ====================================================
+
+        if request.POST:
+
+            data = request.POST.dict()
+
+        else:
+
+            data = _parse_json_request(
+                request
+            )
+
+        # ====================================================
+        # 【新增】
+        #
+        # E_commerce → Ecpay Mock
+        # 的 CheckMacValue 必須在 Service 前驗證。
+        # ====================================================
+
+        incoming_check_mac = (
+            _verify_check_mac_value(
+                data
+            )
+        )
+
+        # ====================================================
+        # 【新增】
+        #
+        # 保留原始 MAC。
+        #
+        # ECPayService.create_atm_payment()
+        # 可以取得原始 Store → Ecpay Mock
+        # CheckMacValue。
+        # ====================================================
+
+        data[
+            "CheckMacValue"
+        ] = incoming_check_mac
+
+        # ====================================================
+        # 【新增】
+        # 基本欄位
+        # ====================================================
+
+        if not data.get(
+            "merchant_trade_no"
+        ):
+
+            raise ValueError(
+                "建立 ATM 付款缺少 merchant_trade_no"
+            )
+
+        if data.get(
+            "trade_amt"
+        ) in (
+            None,
+            "",
+        ):
+
+            raise ValueError(
+                "建立 ATM 付款缺少 trade_amt"
+            )
+
+        # ====================================================
+        # 【新增】
+        # ECPayService
+        # ====================================================
+
+        service = get_ecpay_service()
+
+        result = (
+            service
+            .create_atm_payment(
+                request_data=data,
+            )
+        )
+
+        # ====================================================
+        # 【新增】
+        # Service 結果驗證
+        # ====================================================
+
+        if not isinstance(
+            result,
+            dict,
+        ):
+
+            raise RuntimeError(
+                "ECPayService 回傳格式錯誤"
+            )
+
+        if not result.get(
+            "status",
+            False,
+        ):
+
+            raise RuntimeError(
+                result.get(
+                    "message",
+                    "ATM 建立失敗",
+                )
+            )
+
+        payment = result.get(
+            "payment"
+        )
+
+        if not isinstance(
+            payment,
+            dict,
+        ):
+
+            raise RuntimeError(
+                "ATM 建立成功但缺少 payment 資料"
+            )
+
+        # ====================================================
+        # 【新增】
+        # ATM 資訊頁面
+        #
+        # Service 已經完成：
+        #
+        #   PaymentRequest
+        #   Bank Mock
+        #   ATM 資訊
+        #
+        # View 現在只負責顯示。
+        # ====================================================
+
+        content = {
+            "content_js_dict": payment,
+            "content_js_json": json.dumps(
+                payment,
+                ensure_ascii=False,
+                default=str,
+            ),
+            "HF_SPACE_E_COMMERCE_URL": (
+                settings.HF_SPACE_E_COMMERCE_URL
+            ),
+        }
+
+        # ====================================================
+        # 【新增】
+        # Render ATM Information Page
+        # ====================================================
+
+#        return render(
+#            request,
+#            "atm_info.html",
+#            content,
+#        )
+
+        # ========================================================
+        # 【修改】
+        # ATM 建立成功。
+        #
+        # 此時 ECPayService 已經完成：
+        #
+        #     Bank Mock
+        #         ↓
+        #     PaymentRequest
+        #         ↓
+        #     Store Payment
+        #
+        # 現在 Browser 才前往：
+        #
+        #     /gateway/atm_info/
+        #
+        # 注意：
+        #
+        #     這不是重新建立 ATM。
+        #     只是查詢已經存在的 PaymentRequest。
+        # ========================================================
+
+        atm_info_url = (
+            result.get(
+                "atm_info_url"
+            )
+        )
+
+        if not atm_info_url:
+
+            raise RuntimeError(
+                "ATM 建立成功，但缺少 atm_info_url"
+            )
+
+        return redirect(
+            atm_info_url
+        )
+
+
+    except ValueError as exc:
+
+        # ====================================================
+        # 【新增】
+        # Callback / Checkout 資料錯誤
+        # ====================================================
+
+        logger.warning(
+            "%s | ATM checkout validation failed: %s",
+            view_name,
+            str(exc),
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "error": "BadRequest",
+                "message": str(exc),
+                "view": view_name,
+            },
+            status=400,
+        )
+
+    except RuntimeError as exc:
+
+        # ====================================================
+        # 【新增】
+        # Service / Repository / Gateway / Adapter 錯誤
+        # ====================================================
+
+        logger.exception(
+            "%s | ATM checkout processing failed",
+            view_name,
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "error": "CheckoutError",
+                "message": str(exc),
+                "view": view_name,
+            },
+            status=500,
+        )
+
+    except Exception:
+
+        # ====================================================
+        # 【保留】
+        # 最後安全邊界
+        # ====================================================
+
+        logger.exception(
+            "%s | Unexpected ATM checkout error",
+            view_name,
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "error": "ServerError",
+                "message": "ATM 建立發生未預期錯誤",
+                "view": view_name,
+            },
+            status=500,
+        )
+
+# ============================================================
+# 【新增】
+# 顯示 ATM 付款資訊 2
+# ============================================================
+
+def atm_payment_info(
+    request,
+    merchant_trade_no,
+):
+    """
+    【新增】
+
+    Ecpay Mock ATM 資訊顯示頁面。
+
+    ============================================================
+    目的
+    ============================================================
+
+    此 View 與 ecpay_gateway_checkout() 分開。
+
+    ecpay_gateway_checkout()
+        → 負責建立 ATM
+        → 回 JSON 給 ECPayMockAdapter
+
+    atm_payment_info()
+        → 查詢已建立的 ATM 資訊
+        → 顯示 atm_info.html
+
+    ============================================================
+    View 負責
+    ============================================================
+
+    1. HTTP Method
+    2. 接收 merchant_trade_no
+    3. 呼叫 ECPayService
+    4. render atm_info.html
+
+    ============================================================
+    View 不負責
+    ============================================================
+
+    ❌ Django ORM
+    ❌ PaymentRequest.objects
+    ❌ 建立 PaymentRequest
+    ❌ 建立 PaymentNotification
+    ❌ 建立 ATM
+    ❌ 呼叫 Bank Mock
+    ❌ httpx.post()
+    ❌ Payment business logic
+    """
+
+    # ========================================================
+    # 【新增】
+    # ATM 資訊頁只允許 GET
+    # ========================================================
+
+    if request.method != "GET":
+
+        return JsonResponse(
+            {
+                "status": False,
+                "message": "只允許 GET",
+            },
+            status=405,
+        )
+
+    try:
+
+        # ====================================================
+        # 【新增】
+        # 呼叫 ECPayService
+        # ====================================================
+
+        service = get_ecpay_service()
+
+        payment = (
+            service
+            .get_atm_payment_info(
+                merchant_trade_no=merchant_trade_no,
+            )
+        )
+
+        # ====================================================
+        # 【新增】
+        # 準備 Template Context
+        # ====================================================
+
+        content = {
+            "content_js_dict": payment,
+            "content_js_json": json.dumps(
+                payment,
+                ensure_ascii=False,
+                default=str,
+            ),
+            "HF_SPACE_E_COMMERCE_URL": (
+                settings.HF_SPACE_E_COMMERCE_URL
+            ),
+        }
+
+        # ====================================================
+        # 【新增】
+        # 顯示 ATM 資訊頁
+        # ====================================================
+
+        return render(
+            request,
+            "atm_info.html",
+            content,
+        )
+
+    except ValueError as exc:
+
+        logger.warning(
+            "ATM payment info validation failed: %s",
+            exc,
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "message": str(exc),
+            },
+            status=404,
+        )
+
+    except Exception as exc:
+
+        logger.exception(
+            "ATM payment info 顯示失敗",
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "message": (
+                    f"ATM 資訊顯示失敗：{exc}"
+                ),
+            },
+            status=500,
+        )
+
+# ============================================================
+# 【修改】
+# Ecpay Mock ATM 資訊顯示
+# ============================================================
+
+@csrf_exempt
+def atm_info(request):
+    """
+    【修改】
+
+    Ecpay Mock 最後的 ATM 付款資訊顯示 View。
+
+    ============================================================
+    正式流程
+    ============================================================
+
+    E_commerce / Bank Mock 流程完成
+            ↓
+    取得 merchant_trade_no
+            ↓
+    /gateway/atm_info/?merchant_trade_no=ECxxxx
+            ↓
+    atm_info()
+            ↓
+    ECPayService
+            ↓
+    ECPayRepository
+            ↓
+    PaymentRequest
+            ↓
+    atm_info.html
+
+    ============================================================
+    View 只負責
+    ============================================================
+
+    1. HTTP Method
+    2. 取得 merchant_trade_no
+    3. 呼叫 ECPayService
+    4. 準備 Template Context
+    5. render atm_info.html
+
+    ============================================================
+    View 不負責
+    ============================================================
+
+    ❌ Django ORM
+    ❌ PaymentRequest.objects
+    ❌ 建立 ATM
+    ❌ 呼叫 Bank Mock
+    ❌ httpx.post()
+    ❌ Order / Payment business logic
+    ❌ CheckMacValue 重新計算
+    """
+
+    # ========================================================
+    # 【新增】
+    # ATM 資訊頁只允許 GET
+    # ========================================================
+
+    if request.method != "GET":
+
+        return JsonResponse(
+            {
+                "status": False,
+                "message": "只允許 GET",
+            },
+            status=405,
+        )
+
+    # ========================================================
+    # 【新增】
+    # 取得 merchant_trade_no
+    #
+    # 例如：
+    #
+    # /gateway/atm_info/?merchant_trade_no=ECxxxxxxxx
+    #
+    # merchant_trade_no 用來確認要顯示哪一筆
+    # PaymentRequest 的 ATM 資訊。
+    # ========================================================
+
+    merchant_trade_no = request.GET.get(
+        "merchant_trade_no"
     )
-    
-#     print("received_mac =", received_mac)
-#     print("expected_mac =", expected_mac)
-#     print("payment_data =", payment_data)
 
-#     merchant_trade_date = timezone.localtime().strftime("%Y-%m-%d %H:%M:%S")
-    merchant_trade_date = payment_data.get("merchant_trade_date")
+    if not merchant_trade_no:
 
-    if received_mac != expected_mac:
-        return HttpResponse(
-            "CheckMacValue Error",
-            status=400
-        )
-#     print("payment_data: " ,payment_data)
-    merchant_trade_no = payment_data.get("merchant_trade_no") # 訂單編號
-    print("merchant_trade_no: ",merchant_trade_no)
-    
-    payment_data["check_mac_value"] = received_mac
-#    payment_data["status"] = "atm_created"
-    # 通知銀行建立虛擬帳號
-#    bank_result = notify_bank(payment_data)
-    
-    bank_response = notify_bank(payment_data)
-
-    bank_result = json.loads(bank_response.content)
-    print("bank_result =", bank_result)
-    print("type =", type(bank_result))
-
-    logger.info(f"bank_result = {bank_result}")
-    logger.info(f"type = {type(bank_result)}")  
-    
-    if bank_result["status"] == False:
-        error_url = f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_error/"
-#        print("redirect to error_url =", error_url)   # 先加這行確認實際值
-        return redirect(error_url)        
-#             return redirect(f'{HF_SPACE_E_COMMERCE_UR}/commerce_shop/purchased_products/')
-#             return JsonResponse({
-#                 "tags":"error",
-#                 "messages": ["銀行通知失敗: VirtualAccount取得或建立失敗"],
-#             })
-#             return HttpResponse(
-#                 "銀行通知失敗: VirtualAccount取得或建立失敗",
-#                 status=400
-#             )
-    bank_code = bank_result["bank_code"]
-    v_account = bank_result["v_account"]
-    expire_date = bank_result["expire_date"]
-
-    with transaction.atomic():
-        
-        order_obj, create = Order.objects.get_or_create(
-            order_number=merchant_trade_no,
-            defaults={
-                'user_id': payment_data["user_id"],
-                'receiver_name': payment_data["receiver_name"] or "王大明",
-                'amount': payment_data["trade_amt"],
-                'status': payment_data["status"],
-            }
+        return JsonResponse(
+            {
+                "status": False,
+                "message": (
+                    "缺少 merchant_trade_no"
+                ),
+            },
+            status=400,
         )
 
-        
-        payment_request, created = PaymentRequest.objects.get_or_create(
-            merchant_trade_no=merchant_trade_no,  # 查找條件
-            defaults={
-                'merchant_id': payment_data.get("merchant_id", "shop1234"),
-                'merchant_trade_date': merchant_trade_date,
-                'trade_amt': payment_data.get("trade_amt"),
-                'trade_desc': payment_data.get("trade_desc", "商品交易"),
-                'item_name': payment_data.get("item_name"),
-                'choose_payment': payment_data.get("choose_payment", "ATM"),
-                'payment_type': payment_data.get("payment_type", "aio"),
-                'trade_no': payment_data.get("transaction_id"),
-                'status': "atm_created",
-                'return_url': payment_data.get("ReturnURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/ecpay_mock_notify/"),
-                'payment_info_url': payment_data.get("PaymentInfoUrl", f"{settings.HF_SPACE_ECPAY_MOCK_URL}/gateway/payment_info/"),
-                'order_result_url': payment_data.get("OrderResultURL", f"{settings.HF_SPACE_E_COMMERCE_URL}/commerce_shop/payment_ok/"),
-                'check_mac_value': received_mac,
-                'bank_code': bank_code, # 國泰世華銀行代碼
-                'v_account': v_account, # 虛擬帳戶
-                'expire_date': expire_date,
-#                'response_data': bank_result,
-            }
+    merchant_trade_no = str(
+        merchant_trade_no
+    ).strip()
+
+    if not merchant_trade_no:
+
+        return JsonResponse(
+            {
+                "status": False,
+                "message": (
+                    "merchant_trade_no 不可為空"
+                ),
+            },
+            status=400,
         )
-    
-    # ==========================================
-    # ③ 通知 ecommerce_shop
-    # ==========================================
 
-    shop_result = notify_shop(bank_result)
+    try:
 
-    logger.info(f"shop_result = {shop_result}")
+        # ====================================================
+        # 【新增】
+        # 透過 Service 查詢已建立的 ATM 資訊
+        #
+        # View 不直接查 PaymentRequest。
+        # ====================================================
 
-    if not shop_result.get("status"):
-        error_url = (
-            f"{settings.HF_SPACE_E_COMMERCE_URL}"
-            f"/commerce_shop/payment_error/"
+        service = get_ecpay_service()
+
+        payment = (
+            service
+            .get_atm_payment_info(
+                merchant_trade_no=(
+                    merchant_trade_no
+                ),
+            )
         )
-        return redirect(error_url)
-    # bank_code = payment_request.bank_code
-    # v_account = payment_request.v_account
-    # expire_date = payment_request.expire_date
-    
-    # if bank_code == None and v_account == None:
-        # # 產生 ATM 虛擬帳號
-        # bank_code = payment_request.bank_code = bank_code = "013"  # 國泰世華
-        # v_account = payment_request.v_account = f"{bank_code}{random.randint(100000000000,999999999999)}"
-        # expire_date = payment_request.expire_date = (datetime.datetime.now() + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
 
-#     print("bank_code:", bank_code)
-#     print("v_account:", v_account)
-#     print("expire_date:", expire_date)
-    content_js = {
-        'merchant_id': payment_data.get("merchant_id", "shop1234"),
-        'merchant_trade_no': merchant_trade_no,
-        'merchant_trade_date': merchant_trade_date,
-        'user_id': payment_data["user_id"],
-        'trade_amt': payment_data["trade_amt"],
-        'trade_desc': payment_data["trade_desc"],
-        'item_name': payment_data["item_name"],
-        'choose_payment': payment_data["choose_payment"],
-        'payment_type': payment_data["payment_type"],
-        'trade_no': payment_data["transaction_id"],
-        'return_url': payment_data["ReturnURL"],
-        'payment_info_url': payment_data["PaymentInfoUrl"],
-        'order_result_url': payment_data["OrderResultURL"],
-        'bank_code': bank_code,
-        'v_account': v_account,
-        'expire_date': expire_date,
-        'status': "atm_created",
-		'response_data': shop_result,
-    }
-    content_js["check_mac_value"] = generate_check_mac_value(content_js,settings.ECPAY_HASH_KEY,settings.ECPAY_HASH_IV)
-    
-#     content_js = json.dumps(content_js, ensure_ascii=False)
-    print("content_js: ",content_js)
-#     content = {'content_js': content_js}
-    content = {
-        "content_js_dict": content_js,  # 原始 dict，給模板顯示用
-        "content_js_json": json.dumps(content_js, ensure_ascii=False, default=str),  # JSON 字串，給 JS 用
-        "HF_SPACE_E_COMMERCE_URL": settings.HF_SPACE_E_COMMERCE_URL
-    }
-    logger.info(f"content: {content}")
-    return render(request, "atm_info.html", content)
+        # ====================================================
+        # 【新增】
+        # Template Context
+        #
+        # 對應目前 atm_info.html：
+        #
+        # content_js_dict.merchant_trade_no
+        # content_js_dict.item_name
+        # content_js_dict.trade_amt
+        # content_js_dict.bank_code
+        # content_js_dict.v_account
+        # content_js_dict.expire_date
+        # ====================================================
 
+        content = {
+            "content_js_dict": payment,
+            "content_js_json": json.dumps(
+                payment,
+                ensure_ascii=False,
+                default=str,
+            ),
+            "HF_SPACE_E_COMMERCE_URL": (
+                settings.HF_SPACE_E_COMMERCE_URL
+            ),
+        }
+
+        # ====================================================
+        # 【新增】
+        # 直接顯示 ATM 資訊頁面
+        #
+        # 不再 redirect。
+        # ====================================================
+
+        return render(
+            request,
+            "atm_info.html",
+            content,
+        )
+
+    except ValueError as exc:
+
+        # ====================================================
+        # 【新增】
+        # ATM 資訊不存在 / 查詢資料錯誤
+        # ====================================================
+
+        logger.warning(
+            "ATM info 查詢失敗：%s",
+            exc,
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "message": str(exc),
+            },
+            status=404,
+        )
+
+    except Exception as exc:
+
+        # ====================================================
+        # 【新增】
+        # 最後安全邊界
+        # ====================================================
+
+        logger.exception(
+            "ATM info 顯示發生未預期錯誤",
+        )
+
+        return JsonResponse(
+            {
+                "status": False,
+                "message": (
+                    f"ATM 資訊顯示失敗：{exc}"
+                ),
+            },
+            status=500,
+        )
 
 def notify_shop(bank_result):
     """
@@ -1201,3 +2747,62 @@ def ecpay_notify(request):                           # 定義一個 view，模�
 #         return HttpResponse("1|OK")
 # 
 #     return HttpResponse("0|Invalid Method")
+
+
+# ============================================================
+# 【新增】E_commerce 取消 ATM 訂單
+# E_commerce → ECPay Mock（server-to-server，POST JSON + CheckMacValue）
+# View 只驗證 MAC 與回應 JSON，業務流程在 ECPayService.cancel_order
+# ============================================================
+
+@csrf_exempt
+def cancel_order(request):
+
+    if request.method != "POST":
+        return JsonResponse(
+            {"status": False, "message": "只接受 POST Request"},
+            status=405,
+        )
+
+    try:
+        data = _parse_json_request(request)
+
+        # 【新增】Service 之前先驗證 E_commerce 的 CheckMacValue
+        _verify_check_mac_value(data)
+
+        merchant_trade_no = data.get("merchant_trade_no")
+
+        if not merchant_trade_no:
+            return JsonResponse(
+                {"status": False, "message": "缺少 merchant_trade_no"},
+                status=400,
+            )
+
+        service = get_ecpay_service()
+
+        result = service.cancel_order(
+            merchant_trade_no=str(merchant_trade_no),
+            delete_record=str(data.get("delete_record", "")) == "1",   # 【新增】商店刪除訂單時帶 1（已驗章）
+        )
+
+    # 【修改】業務拒絕 / 下游失敗改回 200 + status=False + message（原為 404/400/502），
+    # 讓商城端能把原因（例如「此交易狀態為 atm_paid，無法取消」）直接顯示給買家
+    except LookupError as ex:
+        return JsonResponse({"status": False, "message": str(ex)}, status=200)
+
+    except ValueError as ex:
+        return JsonResponse({"status": False, "message": str(ex)}, status=200)
+
+    except RuntimeError as ex:
+        # 下游 Bank Mock 失敗：本地未寫入
+        logger.exception("ecpay_mock 取消訂單：下游失敗")
+        return JsonResponse({"status": False, "message": str(ex)}, status=200)
+
+    except Exception as ex:
+        logger.exception("ecpay_mock 取消訂單發生未預期錯誤")
+        return JsonResponse(
+            {"status": False, "message": "取消訂單失敗", "error": str(ex)},
+            status=500,
+        )
+
+    return JsonResponse(result, status=200)

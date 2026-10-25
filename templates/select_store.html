@@ -31,6 +31,10 @@
 <!-- 【修改】{% load static %} 移到最上面(DOCTYPE 後),避免萬一之後在 <head> 也要用 static 標籤時漏載 -->
 <script src="{% static 'js/leaflet.js' %}"></script>
 
+<script src="{% static 'js/sql-wasm.js' %}"></script>
+<script src="{% static 'js/Leaflet.TileLayer.MBTiles.js' %}"></script>
+
+
 <div class="container">
     <h1>請選擇取貨門市</h1>
     <p>訂單編號：{{ merchant_trade_no }}</p>
@@ -39,7 +43,7 @@
 
     <ul class="store-list" id="storeList"></ul>
 
-    <form id="confirmForm" method="post" action="{% url 'review_store' %}">
+    <form id="confirmForm" method="post" action="{% url 'cod_gateway:review_store' %}">
         {% csrf_token %}
         <input type="hidden" name="store_id" id="storeIdInput">
         <button type="submit" class="btn" id="confirmBtn" disabled>確認選擇此門市</button>
@@ -47,80 +51,167 @@
 </div>
 
 <script>
-    // try/catch 包住整段初始化邏輯:避免 stores_json 格式異常時整頁白屏,
-    // 至少在 console 印出明確錯誤方便除錯。
-    try {
-        const stores = {{ stores_json|safe }};
+    // 【新增】使用 async function，先完成 SQL.js 初始化，再建立 MBTiles 地圖。
+    (async function () {
 
-        if (!Array.isArray(stores) || stores.length === 0) {
-            throw new Error("門市清單是空的,請確認後端 MOCK_STORES 設定");
-        }
+        // try/catch 包住整段初始化邏輯:避免 stores_json 格式異常時整頁白屏,
+        // 至少在 console 印出明確錯誤方便除錯。
+        try {
 
-        const map = L.map('map').setView([stores[0].lat, stores[0].lng], 14);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
-
-        const markers = {};
-        const listEl = document.getElementById('storeList');
-        const storeIdInput = document.getElementById('storeIdInput');
-        const confirmBtn = document.getElementById('confirmBtn');
-
-        function selectStore(storeId) {
-            storeIdInput.value = storeId;
-            confirmBtn.disabled = false;
-
-            document.querySelectorAll('.store-item').forEach(el => {
-                el.classList.toggle('selected', el.dataset.storeId === storeId);
+            // 【新增】初始化 SQL.js。
+            // Leaflet.TileLayer.MBTiles.js 裡面會使用 window.SQL，
+            // 因此必須先讓 sql-wasm.js 載入 sql-wasm.wasm。
+            const SQL = await initSqlJs({
+                locateFile: function (filename) {
+                    return "{% static 'js/' %}" + filename;
+                }
             });
-            Object.entries(markers).forEach(([id, marker]) => {
-                marker.setIcon(L.icon({
-                    // 【修改】static 資料夾實際結構是 static/images/color-markers/... (images 有 s,
-                    // 且底下確實有 color-markers 子資料夾放紅藍 marker 圖示),照截圖修正路徑
-                    iconUrl: id === storeId
-						? "{% static 'css/images/color-markers/marker-icon-2x-red.png' %}"
-						: "{% static 'css/images/color-markers/marker-icon-2x-blue.png' %}",
-                    iconSize: [25, 41], iconAnchor: [12, 41]
-                }));
-            });
-        }
 
-        stores.forEach(store => {
-            const marker = L.marker([store.lat, store.lng]).addTo(map)
-                .bindPopup(`<b>${store.name}</b><br>${store.address}`);
-            marker.on('click', () => selectStore(store.store_id));
-            markers[store.store_id] = marker;
+            // 【新增】把 SQL.js 放到全域 window.SQL，
+            // 讓 Leaflet.TileLayer.MBTiles.js 可以執行 new SQL.Database()。
+            window.SQL = SQL;
 
-            const li = document.createElement('li');
-            li.className = 'store-item';
-            li.dataset.storeId = store.store_id;
-            li.innerHTML = `
-                <div>
-                    <span class="chain-tag">${store.chain}</span>
-                    <b>${store.name}</b><br>
-                    <small>${store.address}</small>
-                </div>
-            `;
-            li.addEventListener('click', () => {
-                selectStore(store.store_id);
-                map.setView([store.lat, store.lng], 16);
-            });
-            listEl.appendChild(li);
-        });
+            // 【新增】方便之後如果發生問題，可以在 Console 確認 SQL.js 是否成功。
+            console.log("✅ SQL.js 初始化成功");
 
-        // 表單送出前的最後防呆:確保有選門市才能送出
-        document.getElementById('confirmForm').addEventListener('submit', function (evt) {
-            if (!storeIdInput.value) {
-                evt.preventDefault();
-                alert('請先選擇一個取貨門市');
+            const stores = {{ stores_json|safe }};
+
+            if (!Array.isArray(stores) || stores.length === 0) {
+                throw new Error("門市清單是空的,請確認後端 MOCK_STORES 設定");
             }
-        });
 
-    } catch (err) {
-        console.error("❌ [select_store.html] 地圖初始化失敗:", err);
-        document.getElementById('map').innerHTML =
-            '<p style="color:red;">地圖載入失敗,請重新整理頁面或聯絡客服。</p>';
-    }
+             /*const map = L.map('map').setView([stores[0].lat, stores[0].lng], 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map); */
+
+            //有圖板
+            //var map = L.map('map').setView([25.0330, 121.5654], 13);
+            /* var map = L.map('map').setView([stores[0].lat, stores[0].lng],14);
+            L.tileLayer(
+                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+                {
+                    attribution: 'Tiles &copy; Esri',
+                    maxZoom: 19
+                }
+            ).addTo(map); */
+
+            // 【新增】建立 Leaflet 地圖。
+            // 原本這裡的 map 被註解掉了，但下面 mb.addTo(map) 和 Marker 都需要 map。
+            // 使用第一間門市的位置作為初始中心。
+            const map = L.map('map').setView(
+                [stores[0].lat, stores[0].lng],
+                14
+            );
+
+            // 【修改】使用 Django static 路徑取得本機 MBTiles。
+            // 不再使用 OSM、CARTO 或 Esri 的網路地圖。
+            /* const mb = L.tileLayer.mbTiles(
+                "{% static 'map/taiwan.mbtiles' %}",
+                {
+                    // 【新增】讓 Leaflet 不要超過 MBTiles 的合理縮放範圍。
+                    maxZoom: 19
+                }
+            ); */
+			// 讓你的 plugin 自己從 MBTiles metadata 讀
+			const mb = L.tileLayer.mbTiles(
+				"{% static 'map/north.mbtiles' %}"
+			);
+
+            // 【新增】MBTiles 資料庫成功讀取後會觸發這個事件。
+			mb.on('databaseloaded', function () {
+				console.log("✅ '北台灣 MBTiles 載入成功");
+				console.log("📍 MBTiles minZoom:", mb.options.minZoom);
+				console.log("📍 MBTiles maxZoom:", mb.options.maxZoom);
+				console.log("📍 MBTiles format:", mb._format);
+			});
+
+
+            // 【新增】MBTiles 讀取失敗時，把真正的錯誤印到 Console。
+            mb.on('databaseerror', function (event) {
+                console.error("❌ 北台灣 MBTiles 載入失敗:", event.error || event);
+            });
+
+            // 【修改】將完全離線的 MBTiles 底圖加入 Leaflet。
+            mb.addTo(map);
+
+
+            const markers = {};
+            const listEl = document.getElementById('storeList');
+            const storeIdInput = document.getElementById('storeIdInput');
+            const confirmBtn = document.getElementById('confirmBtn');
+
+            function selectStore(storeId) {
+                storeIdInput.value = storeId;
+                confirmBtn.disabled = false;
+
+                document.querySelectorAll('.store-item').forEach(el => {
+                    el.classList.toggle('selected', el.dataset.storeId === storeId);
+                });
+                Object.entries(markers).forEach(([id, marker]) => {
+                    marker.setIcon(L.icon({
+                        // 【修改】static 資料夾實際結構是 static/images/color-markers/... (images 有 s,
+                        // 且底下確實有 color-markers 子資料夾放紅藍 marker 圖示),照截圖修正路徑
+                        iconUrl: id === storeId
+                            ? "{% static 'css/images/color-markers/marker-icon-2x-red.png' %}"
+                            : "{% static 'css/images/color-markers/marker-icon-2x-blue.png' %}",
+                        iconSize: [25, 41], iconAnchor: [12, 41]
+                    }));
+                });
+            }
+
+            stores.forEach(store => {
+                const marker = L.marker([store.lat, store.lng]).addTo(map)
+                    .bindPopup(`<b>${store.name}</b><br>${store.address}`);
+                marker.on('click', () => selectStore(store.store_id));
+                markers[store.store_id] = marker;
+
+                const li = document.createElement('li');
+                li.className = 'store-item';
+                li.dataset.storeId = store.store_id;
+                li.innerHTML = `
+                    <div>
+                        <span class="chain-tag">${store.chain}</span>
+                        <b>${store.name}</b><br>
+                        <small>${store.address}</small>
+                    </div>
+                `;
+                /* li.addEventListener('click', () => {
+                    selectStore(store.store_id);
+                    map.setView([store.lat, store.lng], 14);
+                }); */
+				// 直接使用 MBTiles 自己的 maxZoom
+				li.addEventListener('click', () => {
+					selectStore(store.store_id);
+
+					// 【修改】使用 MBTiles 本身提供的最大 Zoom，
+					// 目前 taiwan.mbtiles 的 maxZoom 是 15。
+					const targetZoom = mb.options.maxZoom || 15;
+
+					map.setView([store.lat, store.lng], targetZoom);
+				});
+
+                listEl.appendChild(li);
+            });
+
+            // 表單送出前的最後防呆:確保有選門市才能送出
+            document.getElementById('confirmForm').addEventListener('submit', function (evt) {
+                if (!storeIdInput.value) {
+                    evt.preventDefault();
+                    alert('請先選擇一個取貨門市');
+                }
+            });
+
+            // 【新增】初始化完成後在 Console 顯示門市數量。
+            console.log("✅ 離線地圖初始化完成，門市數量:", stores.length);
+
+        } catch (err) {
+            console.error("❌ [select_store.html] 地圖初始化失敗:", err);
+            document.getElementById('map').innerHTML =
+                '<p style="color:red;">地圖載入失敗,請重新整理頁面或聯絡客服。</p>';
+        }
+
+    })();
 </script>
 </body>
 </html>

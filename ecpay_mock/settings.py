@@ -13,20 +13,21 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 from django.utils.csp import CSP
-#import django
+from dotenv import load_dotenv
+import mimetypes
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-#print(f"Django version: {django.__version__}")
+ENV_FILE = BASE_DIR / ".env"
+
+load_dotenv(ENV_FILE)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-#SECRET_KEY = 'django-insecure-y=)$9*krere26k&lc9wepbw=ytdsaj-ecxbga6x#(krgum(j@c'
-# 優先讀取環境變數，讀不到就用後面的預設值（注意：正式上線時務必在環境變數中設定 SECRET_KEY）
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-y=)$9*krere26k&lc9wepbw=ytdsaj-ecxbga6x#(krgum(j@c')
+SECRET_KEY = 'django-insecure-y=)$9*krere26k&lc9wepbw=ytdsaj-ecxbga6x#(krgum(j@c'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -34,7 +35,7 @@ DEBUG = True
 BACKEND_URL = ""
 
 if "SPACE_HOST" in os.environ:
-    # 優先使用官方直接提供的完整網域 (例如: monzid1-ecpay-mock.hf.space)
+    # 優先使用官方直接提供的完整網域 (例如: monzid1-e-commerce.hf.space)
     BACKEND_URL = f"https://{os.environ.get('SPACE_HOST')}"
 elif "SPACE_ID" in os.environ:
     # 備用方案：如果只有 SPACE_ID，手動轉換拼湊
@@ -43,23 +44,32 @@ elif "SPACE_ID" in os.environ:
     BACKEND_URL = f"https://{subdomain}.hf.space"
 else:
     # 本地開發環境
-    BACKEND_URL = "http://127.0.0.1:8001"
+    BACKEND_URL = "http://127.0.0.1:8000"
 
 HF_SPACE_E_COMMERCE_URL = os.environ.get('HF_SPACE_E_COMMERCE_URL', 'http://127.0.0.1:8000')
 HF_SPACE_ECPAY_MOCK_URL = os.environ.get('HF_SPACE_ECPAY_MOCK_URL', 'http://127.0.0.1:8001')
 HF_SPACE_BANK_SITE_URL = os.environ.get('HF_SPACE_BANK_SITE_URL', 'http://127.0.0.1:8002')
 
+INVENTORY_RESERVATION_MINUTES = 30
+SESSION_COOKIE_NAME = "cod_gateway_sessionid"
 
+mimetypes.add_type("application/wasm", ".wasm", True)
+mimetypes.add_type("application/octet-stream", ".mbtiles", True)
+
+    
 ALLOWED_HOSTS = [
 	'monzid1-ecpay-mock.hf.space',
-	'proxy.spaces.internal.huggingface.tech'
+	'proxy.spaces.internal.huggingface.tech',
+	'127.0.0.1',
+	'localhost',
 ]
 
 # 關鍵: 允許Hugging Face 的Iframe 嵌入你的網站,否則畫面會空白
-#X_FRAME_OPTIONS = "ALLOW-FROM https://huggingface.co"
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # 加上這行：允許 Django 讀取 X-Forwarded-Host 標頭
 USE_X_FORWARDED_HOST = True
+
 
 # Application definition
 
@@ -71,29 +81,48 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'gateway',          # 你的 fake 綠界 app
-	'cod_gateway',   # 新增
+    'cod_gateway',
     'corsheaders',      # 新增 CORS 支援
 ]
 
+LOGIN_REDIRECT_URL = '/gateway/'
+LOGOUT_REDIRECT_URL = '/gateway/'
+
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # 放在最前面
-	'django.middleware.csrf.CsrfViewMiddleware',
-#    'django.middleware.security.SecurityMiddleware',
-	'django.middleware.csp.ContentSecurityPolicyMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+ #   'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# MIDDLEWARE = [
+    # 'corsheaders.middleware.CorsMiddleware',  # 放在最前面
+    # 'django.middleware.security.SecurityMiddleware',
+    # 'django.contrib.sessions.middleware.SessionMiddleware',
+    # 'django.middleware.common.CommonMiddleware',
+    # 'django.middleware.csrf.CsrfViewMiddleware',
+    # 'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # 'django.contrib.messages.middleware.MessageMiddleware',
+    # 'django.middleware.clickjacking.XFrameOptionsMiddleware',
+# ]
 
 # CSP 設定（包含允許 HuggingFace iframe）
 SECURE_CSP = {
     "default-src": [CSP.SELF],
     "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],   # 允許 inline style   
     "script-src": [CSP.SELF, CSP.UNSAFE_INLINE],  # 允許 inline script
-    "img-src": [CSP.SELF, "https:", "data:"],
+#    "img-src": [CSP.SELF, "https:"],
+    "img-src": [
+        CSP.SELF,
+        "https:",
+        "data:",
+        "blob:",
+    ],
     "frame-ancestors": ["https://huggingface.co"],  # 允許 HF 嵌入
 }
 
@@ -110,7 +139,6 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-				'django.template.context_processors.csp',
             ],
         },
     },
@@ -122,12 +150,10 @@ WSGI_APPLICATION = 'ecpay_mock.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DB_PATH = os.environ.get('SQLITE_DB_PATH', str(BASE_DIR / 'db.sqlite3'))
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': DB_PATH,
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
@@ -205,12 +231,19 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / "staticfiles"   # 加這行
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
 
+# STATIC_URL = 'static/'
+# STATIC_ROOT = BASE_DIR / "staticfiles"   # 加這行
+# STATICFILES_DIRS = [
+    # BASE_DIR / "static",
+# ]
+
+# STATICFILES_DIRS = [BASE_DIR / "static"]
 
 STORAGES = {
     "staticfiles": {
@@ -224,8 +257,10 @@ SITE_ID = 2
 
 # 綠界測試環境
 ECPAY_MERCHANT_ID = "3002607"
-ECPAY_HASH_KEY = os.environ.get('ECPAY_HASH_KEY', '')
-ECPAY_HASH_IV = os.environ.get('ECPAY_HASH_IV', '')
+ECPAY_HASH_KEY = os.getenv('ECPAY_HASH_KEY', '')
+ECPAY_HASH_IV = os.getenv('ECPAY_HASH_IV', '')
+#ECPAY_HASH_KEY = os.environ.get('ECPAY_HASH_KEY', '')
+#ECPAY_HASH_IV = os.environ.get('ECPAY_HASH_IV', '')
 
 # -------------------------------
 # 🔑 CORS & CSRF 設定
@@ -240,10 +275,8 @@ CORS_ALLOWED_ORIGINS = [
 #	"https://huggingface.co/spaces/monzid1-ecommerce.hf.space",
 #	"https://huggingface.co/spaces/monzid1-ecpay-mock.hf.space",
 #	"https://huggingface.co/spaces/monzid1-bank-site.hf.space",
-#    "http://127.0.0.1:8000",   # React/Vue 本地端 3000
-#    "http://localhost:8000",
-#    "http://127.0.0.1:8002",   # React/Vue 本地端 3000
-#    "http://localhost:8002",
+#    "http://127.0.0.1:8001",   # React/Vue 本地端 3000
+#    "http://localhost:8001",
 ]
 
 # 如果要允許所有來源 (開發用)
@@ -272,15 +305,11 @@ CSRF_TRUSTED_ORIGINS = [
 # 允許跨域傳送 Cookie
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# CSRF 白名單 (允許的前端來源)
 #CSRF_TRUSTED_ORIGINS = [
 #	"https://*.hf.space",
-#	"https://huggingface.co",
 #	"https://huggingface.co/spaces/monzid1-ecommerce.hf.space",
 #	"https://huggingface.co/spaces/monzid1-ecpay-mock.hf.space",
 #	"https://huggingface.co/spaces/monzid1-bank-site.hf.space",
-#    "http://127.0.0.1:8000",
-#    "http://localhost:8000",
-#    "http://127.0.0.1:8002",   # React/Vue 本地端 3000
-#    "http://localhost:8002",
+#    "http://127.0.0.1:8001",
+#    "http://localhost:8001",
 #]

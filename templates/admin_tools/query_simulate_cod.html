@@ -11,12 +11,39 @@
         select, input, button { padding: 6px; margin: 5px 0; }
 
         /* 頁首:標題 + 登出連結,固定顯示,不受查詢狀態影響 */
-        .page-header {
+        <!-- .page-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
-        }
+        } -->
+		.page-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 20px;
+			gap: 20px;
+		}
+
+		/* 歡迎訊息 + 登出按鈕 */
+		.user-info {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			white-space: nowrap;
+		}
+
+		.user-info p {
+			margin: 0;
+		}
+
+		.user-info form {
+			margin: 0;
+		}
+
+		.user-info button {
+			margin: 0;
+		}
 
         /* 左右兩欄排版 */
         .layout {
@@ -47,10 +74,14 @@
      有沒有選 table/欄位,登出連結都會一直顯示,不會消失。 -->
 <div class="page-header">
     <h1>資料庫查詢 + 模擬付款工具（管理員限定）</h1>
-    <p>
-        歡迎，{{ user.username }}｜
-        <a href="{% url 'admin:logout' %}">登出</a>
-    </p>
+	    <div class="user-info">
+        <p>歡迎，{{ user.username }}｜</p>
+		<!-- <a href="{% url 'admin:logout' %}">登出</a> -->
+        <form method="post" action="{% url 'admin:logout' %}">
+            {% csrf_token %}
+            <button type="submit">登出</button>
+        </form>
+    </div>
 </div>
 
 <!-- ================================
@@ -147,6 +178,12 @@
             {% csrf_token %}
             <button type="button" onclick="submitForm('failed')">模擬取貨失敗未付款</button>
         </form>
+
+        <!-- 【新增】模擬:逾期未付款(expired) -->
+        <form id="form-expired" method="post" action="">
+            {% csrf_token %}
+            <button type="button" onclick="submitForm('expired')">模擬逾期未付款</button>
+        </form>
 		
 		<!-- ================================
              【新增處 A】模擬:貨物已送達超商
@@ -189,6 +226,9 @@ function submitForm(type) {
         targetUrl = `/cod_gateway/simulate_cvscod_paid/${encodedNo}/`;
     } else if (type === 'failed') {
         targetUrl = `/cod_gateway/simulate_cvscod_failed/${encodedNo}/`;
+    // 【新增】對應 simulate_cvscod_expired 的路由
+    } else if (type === 'expired') {
+        targetUrl = `/cod_gateway/simulate_cvscod_expired/${encodedNo}/`;
     // ================================
     // 【新增處 B】對應 mock_shipped 的路由
     // ================================

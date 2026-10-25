@@ -17,7 +17,7 @@ class Order(models.Model):
             ("cancelled", "Cancelled"),
             ("expired", "Expired"),
         ],
-        default="Pending"
+        default="pending"
     )
     created_at = models.DateTimeField(auto_now_add=True)      # 建立時間
     updated_at = models.DateTimeField(auto_now=True)          # 更新時間

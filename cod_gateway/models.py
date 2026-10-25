@@ -23,6 +23,8 @@ class CODPaymentRequest(models.Model):
     )
 
     merchant_trade_no = models.CharField(max_length=50, unique=True)  # 對應 Order.order_number
+    # 【新增】ECPay Mock 產生的交易編號（跟 ATM 的 PaymentRequest.trade_no 同樣格式 EC + 18 碼）
+    trade_no = models.CharField(max_length=50, blank=True, default="")
     merchant_trade_date = models.DateTimeField()
     trade_amt = models.DecimalField(max_digits=10, decimal_places=2)
     item_name = models.TextField()
@@ -55,6 +57,8 @@ class CODPaymentRequest(models.Model):
             ("cod_shipped", "配送中,待取貨付款"),   # 【新增】
             ("cod_paid", "已取貨付款"),             # 【新增】
             ("cod_failed", "取貨付款失敗"),
+            ("cod_cancelled", "訂單已取消"),        # 【新增】
+            ("cod_expired", "訂單逾期未付款"),        # 【新增】
         ],
         default="cod_created",
     )
