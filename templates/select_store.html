@@ -101,7 +101,7 @@
             // 使用第一間門市的位置作為初始中心。
             const map = L.map('map').setView(
                 [stores[0].lat, stores[0].lng],
-                12
+                14
             );
 
             // 【修改】使用 Django static 路徑取得本機 MBTiles。
@@ -115,7 +115,8 @@
             ); */
 			// 讓你的 plugin 自己從 MBTiles metadata 讀
 			const mb = L.tileLayer.mbTiles(
-				"{% static 'map/north.mbtiles' %}"
+				"{% static 'map/taoyuan.mbtiles' %}"
+				//"{% static 'map/north.mbtiles' %}"
 			);
 
             // 【新增】MBTiles 資料庫成功讀取後會觸發這個事件。
