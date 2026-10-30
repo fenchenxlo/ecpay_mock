@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect
 # Create your views here.
-import json,httpx,uuid,os
+import json,httpx,uuid
 import traceback
 import datetime  # 【新增】用於解析 merchant_trade_date 字串
 
@@ -890,37 +890,6 @@ def cod_checkout(request):
     # 【修改】app_name = "cod_gateway"，要加命名空間
     # return redirect("select_store")
     return redirect("cod_gateway:select_store")
-
-# 【新增】mbtiles 的實際檔案路徑(請依你 static/map/ 實際所在位置調整)
-MBTILES_PATH = os.path.join(settings.BASE_DIR, "static", "map", "taoyuan.mbtiles")
-
-def tile(request, z, x, y):
-    # 【新增】MBTiles 的 Y 軸是 TMS 規格,與 Leaflet 的 XYZ 上下相反,需要換算
-    tms_y = (1 << z) - 1 - y
-
-    # 【新增】唯讀開啟,只查單一圖磚
-    conn = sqlite3.connect(f"file:{MBTILES_PATH}?mode=ro", uri=True)
-    try:
-        row = conn.execute(
-            "SELECT tile_data FROM tiles "
-            "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
-            (z, x, tms_y),
-        ).fetchone()
-    finally:
-        conn.close()
-
-    # 【新增】沒有這張圖磚就回 404(Leaflet 會當作空白圖磚)
-    if not row:
-        raise Http404
-
-    data = bytes(row[0])
-    # 【新增】用檔頭判斷 png / jpeg
-    content_type = "image/png" if data[:4] == b"\x89PNG" else "image/jpeg"
-
-    resp = HttpResponse(data, content_type=content_type)
-    # 【新增】圖磚幾乎不變,讓瀏覽器快取一天
-    resp["Cache-Control"] = "public, max-age=86400"
-    return resp
 
 # @csrf_exempt
 # @transaction.atomic
