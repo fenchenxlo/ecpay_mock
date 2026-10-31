@@ -110,12 +110,15 @@
 			// 不再於瀏覽器下載整個 MBTiles
 
 			L.tileLayer(
-				"/tiles/{z}/{x}/{y}/",
+				"{% url 'cod_gateway:tile' 0 0 0 %}".replace(
+					"/0/0/0/",
+					"/{z}/{x}/{y}/"
+				),
 				{
-					minZoom: 1,
+					minZoom: 7,
 					maxZoom: 15,
 					tileSize: 256,
-					attribution: "Local MBTiles"
+					attribution: "© 國土測繪圖資服務雲"
 				}
 			).addTo(map);
 
