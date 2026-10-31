@@ -101,7 +101,7 @@
 			// 讓你的 plugin 自己從 MBTiles metadata 讀
 			//"{% static 'map/north.mbtiles' %}"
 			// 【修改】L.tileLayer.mbTiles(整包 .mbtiles) → L.tileLayer(後端 tile view URL),只下載畫面需要的圖磚
-			// {% url %} 先用 0/0/0 產生路徑,再換成 Leaflet 的 {z}/{x}/{y} 佔位符(避免硬寫網址前綴)
+			// "{% url %} 先用 0/0/0 產生路徑,再換成 Leaflet 的 {z}/{x}/{y} 佔位符(避免硬寫網址前綴)"
 			const mb = L.tileLayer(
 				"{% url 'cod_gateway:tile' 0 0 0 %}".replace("/0/0/0/", "/{z}/{x}/{y}/"),
 				{
