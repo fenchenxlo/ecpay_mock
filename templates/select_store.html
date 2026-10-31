@@ -31,8 +31,7 @@
 <!-- 【修改】{% load static %} 移到最上面(DOCTYPE 後),避免萬一之後在 <head> 也要用 static 標籤時漏載 -->
 <script src="{% static 'js/leaflet.js' %}"></script>
 
-<script src="{% static 'js/sql-wasm.js' %}"></script>
-<script src="{% static 'js/Leaflet.TileLayer.MBTiles.js' %}"></script>
+<!-- 【刪除】sql-wasm.js 與 Leaflet.TileLayer.MBTiles.js 兩行:改由後端 tile view 提供圖磚,瀏覽器不再需要整包下載 mbtiles 與 SQLite wasm -->
 
 
 <div class="container">
@@ -58,21 +57,7 @@
         // 至少在 console 印出明確錯誤方便除錯。
         try {
 
-            // 【新增】初始化 SQL.js。
-            // Leaflet.TileLayer.MBTiles.js 裡面會使用 window.SQL，
-            // 因此必須先讓 sql-wasm.js 載入 sql-wasm.wasm。
-            const SQL = await initSqlJs({
-                locateFile: function (filename) {
-                    return "{% static 'js/' %}" + filename;
-                }
-            });
-
-            // 【新增】把 SQL.js 放到全域 window.SQL，
-            // 讓 Leaflet.TileLayer.MBTiles.js 可以執行 new SQL.Database()。
-            window.SQL = SQL;
-
-            // 【新增】方便之後如果發生問題，可以在 Console 確認 SQL.js 是否成功。
-            console.log("✅ SQL.js 初始化成功");
+            // 【刪除】initSqlJs 初始化與 window.SQL 設定:改走後端 tile view,前端不再需要 SQL.js
 
             const stores = {{ stores_json|safe }};
 
@@ -114,23 +99,24 @@
                 }
             ); */
 			// 讓你的 plugin 自己從 MBTiles metadata 讀
-			const mb = L.tileLayer.mbTiles(
-				"{% static 'map/taoyuan.mbtiles' %}"
-				//"{% static 'map/north.mbtiles' %}"
+			//"{% static 'map/north.mbtiles' %}"
+			// 【修改】L.tileLayer.mbTiles(整包 .mbtiles) → L.tileLayer(後端 tile view URL),只下載畫面需要的圖磚
+			// {% url %} 先用 0/0/0 產生路徑,再換成 Leaflet 的 {z}/{x}/{y} 佔位符(避免硬寫網址前綴)
+			const mb = L.tileLayer(
+				"{% url 'cod_gateway:tile' 0 0 0 %}".replace("/0/0/0/", "/{z}/{x}/{y}/"),
+				{
+					// 【新增】原 plugin 會自動讀 metadata 的 maxZoom,改後需手動指定(請依 taoyuan.mbtiles 實際值調整)
+					maxZoom: 15
+				}
 			);
 
             // 【新增】MBTiles 資料庫成功讀取後會觸發這個事件。
-			mb.on('databaseloaded', function () {
-				console.log("✅ '北台灣 MBTiles 載入成功");
-				console.log("📍 MBTiles minZoom:", mb.options.minZoom);
-				console.log("📍 MBTiles maxZoom:", mb.options.maxZoom);
-				console.log("📍 MBTiles format:", mb._format);
-			});
-
+            // 【刪除】databaseloaded 事件:一般 tileLayer 不會觸發,改用下面的 tileerror 偵錯
 
             // 【新增】MBTiles 讀取失敗時，把真正的錯誤印到 Console。
-            mb.on('databaseerror', function (event) {
-                console.error("❌ 北台灣 MBTiles 載入失敗:", event.error || event);
+            // 【修改】databaseerror → tileerror:圖磚載入失敗時,把錯誤印到 Console。
+            mb.on('tileerror', function (event) {
+                console.error("❌ 圖磚載入失敗:", event.tile && event.tile.src);
             });
 
             // 【修改】將完全離線的 MBTiles 底圖加入 Leaflet。
