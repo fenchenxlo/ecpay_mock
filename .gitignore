@@ -7,3 +7,5 @@ env/
 db.sqlite3
 .DS_Store
 node_modules
+# 排除離線地圖資料庫
+static/map/*.mbtiles
