@@ -98,15 +98,27 @@
                     maxZoom: 19
                 }
             ); */
-			// 讓你的 plugin 自己從 MBTiles metadata 讀
-			//"{% static 'map/north.mbtiles' %}"
-			// 【修改】L.tileLayer.mbTiles(整包 .mbtiles) → L.tileLayer(後端 tile view URL),只下載畫面需要的圖磚
-			// "{% url %} 先用 0/0/0 產生路徑,再換成 Leaflet 的 {z}/{x}/{y} 佔位符(避免硬寫網址前綴)"
-			const mb = L.tileLayer(
+			/*  讓你的 plugin 自己從 MBTiles metadata 讀
+			"{% static 'map/north.mbtiles' %}"
+			 【修改】L.tileLayer.mbTiles(整包 .mbtiles) → L.tileLayer(後端 tile view URL),只下載畫面需要的圖磚
+			 "url 內容 先用 0/0/0 產生路徑,再換成 Leaflet 的 {z}/{x}/{y} 佔位符(避免硬寫網址前綴)" */
+			/* const mb = L.tileLayer(
 				"{% url 'cod_gateway:tile' 0 0 0 %}".replace("/0/0/0/", "/{z}/{x}/{y}/"),
 				{
 					// 【新增】原 plugin 會自動讀 metadata 的 maxZoom,改後需手動指定(請依 taoyuan.mbtiles 實際值調整)
 					maxZoom: 15
+				}
+			); */
+			
+			// Django 先產生圖磚 URL，再由 Leaflet 替換 z、x、y
+			const tileUrl = "{% url 'cod_gateway:tile' 0 0 0 %}";
+
+			const mb = L.tileLayer(
+				tileUrl.replace(/\/0\/0\/0\/?$/, "/{z}/{x}/{y}/"),
+				{
+					minZoom: 0,
+					maxZoom: 15,
+					attribution: "Offline Taiwan Map"
 				}
 			);
 

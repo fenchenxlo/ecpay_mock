@@ -1,12 +1,12 @@
 from django.shortcuts import render, redirect
 # Create your views here.
-import json,httpx,uuid,os
+import json,httpx,uuid,os,sqlite3
 import traceback
 import datetime  # 【新增】用於解析 merchant_trade_date 字串
 
 from django.conf import settings
 from django.db import transaction, IntegrityError, connection
-from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse, Http404
 from django.contrib.auth.decorators import user_passes_test
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib import messages
