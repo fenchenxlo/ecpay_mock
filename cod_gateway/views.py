@@ -895,7 +895,7 @@ def cod_checkout(request):
 # 若不存在則退回本機 static/map
 
 MBTILES_FILENAME = "taiwan.mbtiles"
- 
+
 HF_MBTILES_PATH = f"/data/map/{MBTILES_FILENAME}"
 
 LOCAL_MBTILES_PATH = os.path.join(
